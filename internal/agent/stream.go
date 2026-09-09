@@ -1,22 +1,12 @@
-package main
+package agent
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"log"
-	"net/http"
-	"os"
 	"strings"
-)
-
-const (
-	apiURL = "https://openrouter.ai/api/v1/chat/completions"
-	model  = "deepseek/deepseek-v4-flash-0731"
 )
 
 type streamChunk struct {
@@ -30,99 +20,8 @@ type streamChunk struct {
 	Error map[string]any `json:"error"`
 }
 
-type assistantMessage struct {
-	Content          string
-	ReasoningDetails []map[string]any
-}
-
-func main() {
-	telegram := flag.Bool("telegram", false, "serve the agent as a Telegram bot instead of a terminal chat")
-	flag.Parse()
-
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
-	if apiKey == "" {
-		log.Fatal("OPENROUTER_API_KEY is not set")
-	}
-
-	if *telegram {
-		if err := runTelegram(apiKey); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-	runTerminal(apiKey)
-}
-
-func runTerminal(apiKey string) {
-	var messages []map[string]any
-	input := bufio.NewScanner(os.Stdin)
-	fmt.Println("Chat with " + model + ". Ctrl-C or Ctrl-D to quit.")
-
-	for {
-		fmt.Print("\nyou> ")
-		if !input.Scan() {
-			break
-		}
-		question := strings.TrimSpace(input.Text())
-		if question == "" {
-			continue
-		}
-
-		messages = append(messages, map[string]any{"role": "user", "content": question})
-
-		assistant, err := chat(apiKey, messages, os.Stdout)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			messages = messages[:len(messages)-1]
-			continue
-		}
-
-		messages = append(messages, map[string]any{
-			"role":              "assistant",
-			"content":           assistant.Content,
-			"reasoning_details": assistant.ReasoningDetails,
-		})
-	}
-	if err := input.Err(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func chat(apiKey string, messages []map[string]any, out io.Writer) (assistantMessage, error) {
-	body, err := json.Marshal(map[string]any{
-		"model":     model,
-		"messages":  messages,
-		"reasoning": map[string]any{"enabled": false},
-		"stream":    true,
-	})
-	if err != nil {
-		return assistantMessage{}, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(body))
-	if err != nil {
-		return assistantMessage{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return assistantMessage{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(resp.Body)
-		return assistantMessage{}, fmt.Errorf("request failed: %s: %s", resp.Status, data)
-	}
-
-	return readStream(resp.Body, out)
-}
-
-func readStream(r io.Reader, out io.Writer) (assistantMessage, error) {
-	var msg assistantMessage
+func readStream(r io.Reader, out io.Writer) (Message, error) {
+	var msg Message
 	var content strings.Builder
 	inReasoning := false
 
