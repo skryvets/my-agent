@@ -5,7 +5,7 @@ A small chatbot that talks to a reasoning model through the [OpenRouter](https:/
 It shows two things that are easy to get wrong:
 
 - server-sent events parsing, including OpenRouter keep-alive comment lines
-- reassembling streamed `reasoning_details` fragments so the model's thinking can be replayed in a follow-up turn
+- reassembling streamed `reasoning_details` fragments so the model's thinking can be replayed in a follow-up turn, kept for when reasoning is switched on
 
 It runs in the terminal, or as a Telegram bot.
 
@@ -48,9 +48,11 @@ export OPENROUTER_API_KEY=sk-or-...
 go run .
 ```
 
-Type a message at the `you>` prompt and press enter. The whole conversation, including the reassembled `reasoning_details`, is sent back on every turn, so the model can follow up on its own thinking. Ctrl-C or Ctrl-D exits.
+Type a message at the `you>` prompt and press enter. The whole conversation is sent back on every turn. Ctrl-C or Ctrl-D exits.
 
-Reasoning output is printed under a `--- reasoning ---` header and the final answer under `--- answer ---`. A failed turn prints the error and drops the unanswered message, leaving the session alive.
+The answer streams in as it arrives. A failed turn prints the error and drops the unanswered message, leaving the session alive.
+
+Reasoning is off: `Chat` sends `"reasoning": {"enabled": false}`, so the model returns an answer and no thinking. Turning it on makes the model stream `reasoning` and `reasoning_details` too, which `internal/agent` already reassembles and replays on the next turn - the terminal prints it under a `--- reasoning ---` header, above the answer under `--- answer ---`.
 
 ## Telegram bot
 
@@ -116,7 +118,7 @@ sequenceDiagram
     agent->>api: POST /chat/completions
 
     loop until the stream ends
-        api-->>agent: content and reasoning delta
+        api-->>agent: content delta
         agent->>out: content as it arrives
         agent->>agent: merge reasoning_details fragments
     end
@@ -131,9 +133,10 @@ terminal passes `os.Stdout`, so the answer types itself out. Telegram cannot
 edit a message per token, so it passes `io.Discard` and sends the finished
 answer in one go.
 
-`ReasoningDetails` goes back into the history with the assistant turn, which is
-why the model can follow up on its own thinking. A turn the model failed to
-answer is dropped with `DropLast`, so a broken turn never poisons the history.
+`ReasoningDetails` goes back into the history with the assistant turn, so the
+model can follow up on its own thinking. It is empty while reasoning is off. A
+turn the model failed to answer is dropped with `DropLast`, so a broken turn
+never poisons the history.
 
 ## Layout
 
