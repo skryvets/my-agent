@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -35,11 +36,24 @@ type assistantMessage struct {
 }
 
 func main() {
+	telegram := flag.Bool("telegram", false, "serve the agent as a Telegram bot instead of a terminal chat")
+	flag.Parse()
+
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
 		log.Fatal("OPENROUTER_API_KEY is not set")
 	}
 
+	if *telegram {
+		if err := runTelegram(apiKey); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	runTerminal(apiKey)
+}
+
+func runTerminal(apiKey string) {
 	var messages []map[string]any
 	input := bufio.NewScanner(os.Stdin)
 	fmt.Println("Chat with " + model + ". Ctrl-C or Ctrl-D to quit.")
