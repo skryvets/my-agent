@@ -21,7 +21,7 @@ next start.
 
 Secrets are not template parameters - they would be stored in the build. The startup
 script creates `~/.config/my-agent/env` with empty placeholders and sources it from
-`~/.bashrc`. Fill it in once per workspace:
+`~/.bashrc` and `~/.profile`. Fill it in once per workspace:
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...
@@ -37,3 +37,10 @@ are only needed when running with `-telegram`.
 - **code-server** opens the checkout in the browser
 - **Terminal chat** runs `go run .`, the stdin and stdout connector
 - **go test -race** runs `go test ./... -race`, the gate everything ships behind
+
+## GitHub access
+
+The repository is private, so the template declares `data "coder_external_auth" "github"`
+and workspace creation blocks until you have authenticated. OAuth authorization alone is
+not enough - the Coder GitHub App must also be *installed* on the account, at
+<https://github.com/apps/coder/installations/new>, or the token comes back 403.

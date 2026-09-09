@@ -96,6 +96,12 @@ resource "coder_agent" "main" {
       curl -fsSL "https://go.dev/dl/$want.linux-${data.coder_provisioner.me.arch}.tar.gz" | tar -C ~/.local -xz
     fi
 
+    # /usr/local/bin is on the default PATH of every shell. A profile export is
+    # not enough: Ubuntu's .bashrc returns early when not interactive, so
+    # `coder ssh -- go build` would not find the toolchain.
+    sudo ln -sfn "$HOME/.local/go/bin/go" /usr/local/bin/go
+    sudo ln -sfn "$HOME/.local/go/bin/gofmt" /usr/local/bin/gofmt
+
     mkdir -p ~/.config/my-agent
     if [ ! -f "${local.secrets_env}" ]; then
       cat > "${local.secrets_env}" <<'SECRETS'
@@ -107,14 +113,15 @@ resource "coder_agent" "main" {
       chmod 600 "${local.secrets_env}"
     fi
 
-    if ! grep -q 'my-agent workspace' ~/.bashrc 2>/dev/null; then
-      cat >> ~/.bashrc <<'PROFILE'
-
-    # my-agent workspace
+    cat > ~/.config/my-agent/profile.sh <<'PROFILE'
     export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
     [ -f "$HOME/.config/my-agent/env" ] && . "$HOME/.config/my-agent/env"
     PROFILE
-    fi
+
+    for rc in ~/.bashrc ~/.profile; do
+      grep -q 'my-agent workspace' "$rc" 2>/dev/null && continue
+      printf '\n# my-agent workspace\n. "$HOME/.config/my-agent/profile.sh"\n' >> "$rc"
+    done
 
     if [ ! -d "${local.project_dir}/.git" ]; then
       # The repository is private. Coder's askpass helper hands git the token
