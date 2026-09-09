@@ -25,7 +25,6 @@ type streamChunk struct {
 			Reasoning        string           `json:"reasoning"`
 			ReasoningDetails []map[string]any `json:"reasoning_details"`
 		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error map[string]any `json:"error"`
 }
@@ -116,12 +115,7 @@ func readStream(r io.Reader, out io.Writer) (assistantMessage, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		line := scanner.Text()
-		// ": OPENROUTER PROCESSING" keep-alive comments
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-		data, ok := strings.CutPrefix(line, "data: ")
+		data, ok := strings.CutPrefix(scanner.Text(), "data: ")
 		if !ok {
 			continue
 		}
@@ -172,39 +166,41 @@ func readStream(r io.Reader, out io.Writer) (assistantMessage, error) {
 
 // Streamed reasoning_details blocks arrive in fragments that must be reassembled
 // in the model's original order before they can be replayed in a later turn.
-func mergeReasoningDetails(acc, deltas []map[string]any) []map[string]any {
-	for _, d := range deltas {
-		idx, hasIdx := d["index"].(float64)
-		target := -1
-		if hasIdx {
-			for i, existing := range acc {
-				if e, ok := existing["index"].(float64); ok && e == idx {
-					target = i
+func mergeReasoningDetails(details, fragments []map[string]any) []map[string]any {
+	for _, fragment := range fragments {
+		var target map[string]any
+		index, hasIndex := fragment["index"].(float64)
+		if hasIndex {
+			for _, detail := range details {
+				if existingIndex, ok := detail["index"].(float64); ok && existingIndex == index {
+					target = detail
 					break
 				}
 			}
 		}
-		if target < 0 {
-			acc = append(acc, cloneDetail(d))
+		if target == nil {
+			details = append(details, cloneDetail(fragment))
 			continue
 		}
-		for k, v := range d {
-			s, isStr := v.(string)
-			prev, wasStr := acc[target][k].(string)
-			if isStr && wasStr && (k == "text" || k == "summary" || k == "data") {
-				acc[target][k] = prev + s
-				continue
+		for field, value := range fragment {
+			switch field {
+			case "text", "summary", "data":
+				previous, previousIsString := target[field].(string)
+				next, nextIsString := value.(string)
+				if previousIsString && nextIsString {
+					value = previous + next
+				}
 			}
-			acc[target][k] = v
+			target[field] = value
 		}
 	}
-	return acc
+	return details
 }
 
-func cloneDetail(d map[string]any) map[string]any {
-	out := make(map[string]any, len(d))
-	for k, v := range d {
-		out[k] = v
+func cloneDetail(detail map[string]any) map[string]any {
+	clone := make(map[string]any, len(detail))
+	for field, value := range detail {
+		clone[field] = value
 	}
-	return out
+	return clone
 }
