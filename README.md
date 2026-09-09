@@ -76,7 +76,7 @@ The model is set by the `DefaultModel` constant in `internal/agent/agent.go`.
 
 ```
 main.go                              flag parsing and wiring
-internal/agent/                      the model: OpenRouter client, SSE stream, conversation history
+internal/agent/                      the model: OpenRouter client, SSE stream, reasoning, history
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
 ```
@@ -84,4 +84,4 @@ internal/communication/telegram/     Telegram bot connector
 A connector depends on the agent, never the other way round. Each one takes an
 `Agent` interface - `Model() string` and `Chat(ctx, history, stream)` - so a new
 connector is a new folder under `internal/communication` and a branch in
-`main.go`.
+`main.go`. `CLAUDE.md` has the file-by-file breakdown.
