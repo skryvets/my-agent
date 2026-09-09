@@ -96,13 +96,6 @@ resource "coder_agent" "main" {
       curl -fsSL "https://go.dev/dl/$want.linux-${data.coder_provisioner.me.arch}.tar.gz" | tar -C ~/.local -xz
     fi
 
-    if [ ! -d "${local.project_dir}/.git" ]; then
-      # The repository is private. Coder's askpass helper hands git the token
-      # from the external auth above; GIT_TERMINAL_PROMPT=0 turns a missing
-      # token into a failure instead of a startup script that hangs forever.
-      GIT_TERMINAL_PROMPT=0 git clone "${data.coder_parameter.repo_url.value}" "${local.project_dir}"
-    fi
-
     mkdir -p ~/.config/my-agent
     if [ ! -f "${local.secrets_env}" ]; then
       cat > "${local.secrets_env}" <<'SECRETS'
@@ -121,6 +114,13 @@ resource "coder_agent" "main" {
     export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
     [ -f "$HOME/.config/my-agent/env" ] && . "$HOME/.config/my-agent/env"
     PROFILE
+    fi
+
+    if [ ! -d "${local.project_dir}/.git" ]; then
+      # The repository is private. Coder's askpass helper hands git the token
+      # from the external auth above; GIT_TERMINAL_PROMPT=0 turns a missing
+      # token into a failure instead of a startup script that hangs forever.
+      GIT_TERMINAL_PROMPT=0 git clone "${data.coder_parameter.repo_url.value}" "${local.project_dir}"
     fi
 
     cd "${local.project_dir}"
