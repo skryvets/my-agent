@@ -44,3 +44,17 @@ The repository is private, so the template declares `data "coder_external_auth" 
 and workspace creation blocks until you have authenticated. OAuth authorization alone is
 not enough - the Coder GitHub App must also be *installed* on the account, at
 <https://github.com/apps/coder/installations/new>, or the token comes back 403.
+
+## Template metadata
+
+The name, icon and description shown in the templates list are deployment
+metadata, not part of `main.tf`, and `coder templates push` leaves them alone.
+Set them once with:
+
+```sh
+coder templates edit my-agent \
+  --display-name "My Agent" \
+  --icon "/icon/go.svg" \
+  --description "Go 1.26 chatbot over the OpenRouter API, terminal and Telegram"
+```
+
