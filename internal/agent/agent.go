@@ -9,14 +9,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 const (
 	apiURL = "https://openrouter.ai/api/v1/chat/completions"
-
-	// DefaultModel is the OpenRouter model slug every client uses unless told otherwise.
-	DefaultModel = "deepseek/deepseek-v4-flash-0731"
 )
+
+// Model is the OpenRouter model slug every client uses unless told otherwise.
+var Model = os.Getenv("MY_AGENT_MODEL")
 
 // Message is one assistant turn, with the reasoning blocks that produced it.
 type Message struct {
@@ -36,7 +37,7 @@ type Client struct {
 func New(apiKey string) *Client {
 	return &Client{
 		apiKey: apiKey,
-		model:  DefaultModel,
+		model:  Model,
 		apiURL: apiURL,
 		http:   http.DefaultClient,
 	}
