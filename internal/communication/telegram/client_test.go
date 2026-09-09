@@ -2,106 +2,11 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 )
-
-type apiCall struct {
-	Method  string
-	Payload map[string]any
-}
-
-type fakeTelegram struct {
-	server *httptest.Server
-
-	mu      sync.Mutex
-	calls   []apiCall
-	replies map[string]string
-	sent    chan string
-}
-
-func newFakeTelegram(t *testing.T) *fakeTelegram {
-	t.Helper()
-	fake := &fakeTelegram{
-		replies: map[string]string{},
-		sent:    make(chan string, 16),
-	}
-	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
-
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decoding %s payload: %v", method, err)
-		}
-
-		fake.mu.Lock()
-		fake.calls = append(fake.calls, apiCall{Method: method, Payload: payload})
-		reply, ok := fake.replies[method]
-		fake.mu.Unlock()
-
-		if method == "sendMessage" {
-			text, _ := payload["text"].(string)
-			fake.sent <- text
-		}
-		if !ok {
-			reply = `{"ok":true,"result":true}`
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, reply)
-	}))
-	t.Cleanup(fake.server.Close)
-	return fake
-}
-
-func (f *fakeTelegram) reply(method, body string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.replies[method] = body
-}
-
-func (f *fakeTelegram) methods() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var methods []string
-	for _, call := range f.calls {
-		methods = append(methods, call.Method)
-	}
-	return methods
-}
-
-func (f *fakeTelegram) client() *client {
-	c := newClient("test-token")
-	c.baseURL = f.server.URL
-	return c
-}
-
-func (f *fakeTelegram) nextSent(t *testing.T) string {
-	t.Helper()
-	select {
-	case text := <-f.sent:
-		return text
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for sendMessage")
-		return ""
-	}
-}
-
-func (f *fakeTelegram) expectNoSend(t *testing.T) {
-	t.Helper()
-	select {
-	case text := <-f.sent:
-		t.Fatalf("unexpected sendMessage: %q", text)
-	case <-time.After(100 * time.Millisecond):
-	}
-}
 
 func TestGetUpdatesParsesMessagesAndSetsPollParameters(t *testing.T) {
 	fake := newFakeTelegram(t)
@@ -171,33 +76,5 @@ func TestSendMessageSplitsLongText(t *testing.T) {
 	}
 	if got := fake.calls[0].Payload["chat_id"]; got != float64(99) {
 		t.Errorf("chat_id = %#v", got)
-	}
-}
-
-func TestSplitMessage(t *testing.T) {
-	cases := map[string]struct {
-		text  string
-		limit int
-		want  []string
-	}{
-		"short":                {"hello", 10, []string{"hello"}},
-		"empty":                {"", 10, []string{""}},
-		"splits on blank":      {"one\n\ntwo", 5, []string{"one", "two"}},
-		"splits on space":      {"one two three", 8, []string{"one two", "three"}},
-		"no separator":         {"abcdefgh", 4, []string{"abcd", "efgh"}},
-		"keeps runes together": {strings.Repeat("é", 5), 2, []string{"éé", "éé", "é"}},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got := splitMessage(tc.text, tc.limit)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-			for _, part := range got {
-				if len([]rune(part)) > tc.limit {
-					t.Errorf("part %q exceeds limit %d", part, tc.limit)
-				}
-			}
-		})
 	}
 }

@@ -6,14 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 )
 
 const (
-	apiURL      = "https://api.telegram.org"
+	apiURL = "https://api.telegram.org"
+
+	// pollSeconds is how long getUpdates blocks waiting for a message.
 	pollSeconds = 30
-	maxMessage  = 4096
 )
 
 // client is the slice of the Bot API this bot uses.
@@ -32,46 +32,8 @@ func newClient(token string) *client {
 	}
 }
 
-type response struct {
-	OK          bool            `json:"ok"`
-	Result      json.RawMessage `json:"result"`
-	Description string          `json:"description"`
-	ErrorCode   int             `json:"error_code"`
-	Parameters  struct {
-		RetryAfter int `json:"retry_after"`
-	} `json:"parameters"`
-}
-
-// Error is a Bot API call the server rejected.
-type Error struct {
-	Method      string
-	Code        int
-	Description string
-	RetryAfter  int
-}
-
-func (e *Error) Error() string {
-	return fmt.Sprintf("telegram %s failed: %d %s", e.Method, e.Code, e.Description)
-}
-
-type update struct {
-	UpdateID int64    `json:"update_id"`
-	Message  *message `json:"message"`
-}
-
-type message struct {
-	MessageID int64 `json:"message_id"`
-	From      struct {
-		ID       int64  `json:"id"`
-		Username string `json:"username"`
-	} `json:"from"`
-	Chat struct {
-		ID   int64  `json:"id"`
-		Type string `json:"type"`
-	} `json:"chat"`
-	Text string `json:"text"`
-}
-
+// call posts payload to one Bot API method and unmarshals the result, turning a
+// rejected call into an *Error.
 func (c *client) call(ctx context.Context, method string, payload, result any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -137,30 +99,4 @@ func (c *client) sendMessage(ctx context.Context, chatID int64, text string) err
 
 func (c *client) sendChatAction(ctx context.Context, chatID int64, action string) error {
 	return c.call(ctx, "sendChatAction", map[string]any{"chat_id": chatID, "action": action}, nil)
-}
-
-// Telegram rejects a sendMessage over 4096 characters, so long answers are cut
-// on the last blank line, newline or space that still fits.
-func splitMessage(text string, limit int) []string {
-	var parts []string
-	for {
-		runes := []rune(text)
-		if len(runes) <= limit {
-			if len(parts) == 0 || strings.TrimSpace(text) != "" {
-				parts = append(parts, text)
-			}
-			return parts
-		}
-
-		head := string(runes[:limit])
-		cut := limit
-		for _, separator := range []string{"\n\n", "\n", " "} {
-			if index := strings.LastIndex(head, separator); index > 0 {
-				cut = len([]rune(head[:index]))
-				break
-			}
-		}
-		parts = append(parts, strings.TrimRight(string(runes[:cut]), " \n"))
-		text = strings.TrimLeft(string(runes[cut:]), " \n")
-	}
 }
