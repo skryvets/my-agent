@@ -9,6 +9,33 @@ It shows two things that are easy to get wrong:
 
 It runs in the terminal, or as a Telegram bot.
 
+```mermaid
+flowchart LR
+    main["main.go<br/>flag parsing, wiring"]
+
+    subgraph comm ["internal/communication"]
+        term["terminal<br/>stdin, stdout"]
+        tg["telegram<br/>bot, session, client"]
+    end
+
+    subgraph core ["internal/agent"]
+        chat["Client.Chat<br/>History"]
+        sse["stream.go<br/>reasoning.go"]
+    end
+
+    api(["OpenRouter<br/>chat completions"])
+
+    main -->|default| term
+    main -->|"-telegram"| tg
+    term -->|Agent interface| chat
+    tg -->|Agent interface| chat
+    chat -->|"POST, stream: true"| api
+    api -->|server-sent events| sse
+    sse --> chat
+```
+
+A connector depends on the agent, never the other way round.
+
 ## Requirements
 
 - Go 1.26 or newer
@@ -71,6 +98,42 @@ Only one instance may poll `getUpdates` at a time, so keep the service at a sing
 ## Configuration
 
 The model is set by the `DefaultModel` constant in `internal/agent/agent.go`.
+
+## How a turn works
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor user as User
+    participant conn as Connector
+    participant out as stream writer
+    participant agent as agent.Client
+    participant api as OpenRouter
+
+    user->>conn: message
+    conn->>conn: history.WithUser(text)
+    conn->>agent: Chat(ctx, history, stream)
+    agent->>api: POST /chat/completions
+
+    loop until the stream ends
+        api-->>agent: content and reasoning delta
+        agent->>out: content as it arrives
+        agent->>agent: merge reasoning_details fragments
+    end
+
+    agent-->>conn: Message{Content, ReasoningDetails}
+    conn->>conn: history.WithAssistant(msg)
+    conn-->>user: answer
+```
+
+The `stream` writer is where the reply appears while it is still arriving. The
+terminal passes `os.Stdout`, so the answer types itself out. Telegram cannot
+edit a message per token, so it passes `io.Discard` and sends the finished
+answer in one go.
+
+`ReasoningDetails` goes back into the history with the assistant turn, which is
+why the model can follow up on its own thinking. A turn the model failed to
+answer is dropped with `DropLast`, so a broken turn never poisons the history.
 
 ## Layout
 

@@ -37,6 +37,8 @@ internal/communication/telegram/     Telegram bot connector
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
   carrying two
+- the README carries two mermaid diagrams, one of the package structure and one
+  of a single turn. Changing either shape means updating them
 
 ## Testing
 
