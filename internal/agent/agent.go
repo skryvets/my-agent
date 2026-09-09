@@ -48,6 +48,8 @@ func (c *Client) Model() string { return c.model }
 // Chat sends the whole history and returns the assistant turn, writing the
 // reply to stream as it arrives.
 func (c *Client) Chat(ctx context.Context, history History, stream io.Writer) (Message, error) {
+	// Reasoning is off on purpose. The stream and history still carry
+	// reasoning_details so switching it back on needs no other change.
 	body, err := json.Marshal(map[string]any{
 		"model":     c.model,
 		"messages":  []map[string]any(history),

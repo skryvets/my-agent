@@ -37,6 +37,9 @@ internal/communication/telegram/     Telegram bot connector
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
   carrying two
+- reasoning is deliberately disabled in `Chat`. The reassembly code in
+  `reasoning.go` is kept for when it is switched back on - do not delete it as
+  dead code, and do not enable reasoning without being asked
 - the README carries two mermaid diagrams, one of the package structure and one
   of a single turn. Changing either shape means updating them
 
