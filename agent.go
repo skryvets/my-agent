@@ -78,7 +78,7 @@ func chat(apiKey string, messages []map[string]any, out io.Writer) (assistantMes
 	body, err := json.Marshal(map[string]any{
 		"model":     model,
 		"messages":  messages,
-		"reasoning": map[string]any{"enabled": true},
+		"reasoning": map[string]any{"enabled": false},
 		"stream":    true,
 	})
 	if err != nil {
