@@ -45,7 +45,7 @@ func TestChatSendsHistoryAndStreamsTheReply(t *testing.T) {
 	if authorization != "Bearer test-key" {
 		t.Errorf("Authorization = %q", authorization)
 	}
-	if request["model"] != DefaultModel || request["stream"] != true {
+	if request["model"] != Model || request["stream"] != true {
 		t.Errorf("request = %#v", request)
 	}
 	messages, _ := request["messages"].([]any)
@@ -87,7 +87,7 @@ func TestChatStopsOnCancelledContext(t *testing.T) {
 }
 
 func TestModelReportsTheSlug(t *testing.T) {
-	if got := New("key").Model(); got != DefaultModel {
+	if got := New("key").Model(); got != Model {
 		t.Errorf("Model() = %q", got)
 	}
 }
