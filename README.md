@@ -50,6 +50,24 @@ Details worth knowing:
 - a `429` from Telegram is retried after the `retry_after` it returns, other poll failures back off up to a minute
 - Ctrl-C or `SIGTERM` stops the bot
 
+## Deploying to Railway
+
+The bot has no HTTP server, so it is a worker service: no port, no healthcheck. Railpack builds the Go binary as `out`, and `railway.json` starts it with the flag:
+
+```json
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "startCommand": "./out -telegram",
+    "restartPolicyType": "ALWAYS"
+  }
+}
+```
+
+Set `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USERS` as service variables. The same command can be typed into Settings -> Deploy -> Custom Start Command instead, but the checked-in file survives a service being recreated.
+
+Only one instance may poll `getUpdates` at a time, so keep the service at a single replica.
+
 ## Configuration
 
 The model is set by the `model` constant in `agent.go`.
