@@ -9,7 +9,7 @@ stay that way unless there is a reason the standard library cannot cover.
 ```
 main.go                              flag parsing and wiring, nothing else
 internal/agent/                      the model
-  agent.go                           Client, Chat, DefaultModel
+  agent.go                           Client, Chat, Model
   stream.go                          server-sent events parsing
   reasoning.go                       reassembling streamed reasoning_details
   history.go                         a conversation in the API's wire format
