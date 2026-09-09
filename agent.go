@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -40,42 +41,54 @@ func main() {
 		log.Fatal("OPENROUTER_API_KEY is not set")
 	}
 
-	question := "How many r's are in the word 'strawberry'?"
+	var messages []map[string]any
+	input := bufio.NewScanner(os.Stdin)
+	fmt.Println("Chat with " + model + ". Ctrl-C or Ctrl-D to quit.")
 
-	assistant := stream(apiKey, map[string]any{
-		"model":     model,
-		"messages":  []map[string]any{{"role": "user", "content": question}},
-		"reasoning": map[string]any{"enabled": true},
-		"stream":    true,
-	})
+	for {
+		fmt.Print("\nyou> ")
+		if !input.Scan() {
+			break
+		}
+		question := strings.TrimSpace(input.Text())
+		if question == "" {
+			continue
+		}
 
-	messages := []map[string]any{
-		{"role": "user", "content": question},
-		{
+		messages = append(messages, map[string]any{"role": "user", "content": question})
+
+		assistant, err := chat(apiKey, messages, os.Stdout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			messages = messages[:len(messages)-1]
+			continue
+		}
+
+		messages = append(messages, map[string]any{
 			"role":              "assistant",
 			"content":           assistant.Content,
 			"reasoning_details": assistant.ReasoningDetails,
-		},
-		{"role": "user", "content": "Are you sure? Think carefully."},
+		})
 	}
+	if err := input.Err(); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	stream(apiKey, map[string]any{
+func chat(apiKey string, messages []map[string]any, out io.Writer) (assistantMessage, error) {
+	body, err := json.Marshal(map[string]any{
 		"model":     model,
 		"messages":  messages,
 		"reasoning": map[string]any{"enabled": true},
 		"stream":    true,
 	})
-}
-
-func stream(apiKey string, payload map[string]any) assistantMessage {
-	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Fatal(err)
+		return assistantMessage{}, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(body))
 	if err != nil {
-		log.Fatal(err)
+		return assistantMessage{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -83,20 +96,24 @@ func stream(apiKey string, payload map[string]any) assistantMessage {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		return assistantMessage{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
-		log.Fatalf("request failed: %s: %s", resp.Status, data)
+		return assistantMessage{}, fmt.Errorf("request failed: %s: %s", resp.Status, data)
 	}
 
+	return readStream(resp.Body, out)
+}
+
+func readStream(r io.Reader, out io.Writer) (assistantMessage, error) {
 	var msg assistantMessage
-	var content, reasoning strings.Builder
+	var content strings.Builder
 	inReasoning := false
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -114,10 +131,10 @@ func stream(apiKey string, payload map[string]any) assistantMessage {
 
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			log.Fatalf("bad stream chunk: %v: %s", err, data)
+			return msg, fmt.Errorf("bad stream chunk: %v: %s", err, data)
 		}
 		if chunk.Error != nil {
-			log.Fatalf("stream error: %v", chunk.Error)
+			return msg, fmt.Errorf("stream error: %v", chunk.Error)
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -126,29 +143,31 @@ func stream(apiKey string, payload map[string]any) assistantMessage {
 
 		if delta.Reasoning != "" {
 			if !inReasoning {
-				fmt.Print("\n--- reasoning ---\n")
+				fmt.Fprint(out, "\n--- reasoning ---\n")
 				inReasoning = true
 			}
-			fmt.Print(delta.Reasoning)
-			reasoning.WriteString(delta.Reasoning)
+			fmt.Fprint(out, delta.Reasoning)
 		}
 		if delta.Content != "" {
 			if inReasoning {
-				fmt.Print("\n--- answer ---\n")
+				fmt.Fprint(out, "\n--- answer ---\n")
 				inReasoning = false
 			}
-			fmt.Print(delta.Content)
+			fmt.Fprint(out, delta.Content)
 			content.WriteString(delta.Content)
 		}
 		msg.ReasoningDetails = mergeReasoningDetails(msg.ReasoningDetails, delta.ReasoningDetails)
 	}
 	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		return msg, err
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
 	msg.Content = content.String()
-	return msg
+	if msg.Content == "" {
+		return msg, errors.New("empty response from model")
+	}
+	return msg, nil
 }
 
 // Streamed reasoning_details blocks arrive in fragments that must be reassembled
