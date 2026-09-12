@@ -68,3 +68,30 @@ func TestReadStreamReturnsErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestReadStreamCollectsToolCallsWithoutContent(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"comm"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"and\":\"ls\"}"}}]}}]}`,
+		"data: [DONE]",
+	}, "\n")
+
+	var out strings.Builder
+	msg, err := readStream(strings.NewReader(sse), &out)
+	if err != nil {
+		t.Fatalf("readStream: %v", err)
+	}
+	if msg.Content != "" {
+		t.Errorf("content = %q, want empty", msg.Content)
+	}
+	if out.String() != "" {
+		t.Errorf("a reply of tool calls alone printed %q", out.String())
+	}
+	if len(msg.ToolCalls) != 1 {
+		t.Fatalf("tool_calls = %#v", msg.ToolCalls)
+	}
+	name, arguments := callFunction(msg.ToolCalls[0])
+	if name != "shell" || arguments != `{"command":"ls"}` {
+		t.Errorf("call = %q %q", name, arguments)
+	}
+}

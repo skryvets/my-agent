@@ -12,9 +12,7 @@ import (
 	"os"
 )
 
-const (
-	apiURL = "https://openrouter.ai/api/v1/chat/completions"
-)
+const apiURL = "https://openrouter.ai/api/v1/chat/completions"
 
 // Model is the OpenRouter model slug every client uses unless told otherwise.
 var Model = os.Getenv("MY_AGENT_MODEL")
@@ -23,6 +21,13 @@ var Model = os.Getenv("MY_AGENT_MODEL")
 type Message struct {
 	Content          string
 	ReasoningDetails []map[string]any
+
+	// ToolCalls is set instead of Content when the model asks for a tool.
+	ToolCalls []map[string]any
+
+	// Steps are the tool calls and tool results that came before Content.
+	// WithAssistant puts them back into the history in front of the answer.
+	Steps History
 }
 
 // Client is an OpenRouter chat completions client bound to one model.
@@ -31,32 +36,37 @@ type Client struct {
 	model  string
 	apiURL string
 	http   *http.Client
+	tools  *Registry
 }
 
-// New returns a client for DefaultModel.
-func New(apiKey string) *Client {
+// New returns a client for Model that offers the given tools.
+func New(apiKey string, tools ...Tool) *Client {
 	return &Client{
 		apiKey: apiKey,
 		model:  Model,
 		apiURL: apiURL,
 		http:   http.DefaultClient,
+		tools:  NewRegistry(tools...),
 	}
 }
 
 // Model reports the model slug answers come from.
 func (c *Client) Model() string { return c.model }
 
-// Chat sends the whole history and returns the assistant turn, writing the
-// reply to stream as it arrives.
-func (c *Client) Chat(ctx context.Context, history History, stream io.Writer) (Message, error) {
+// complete is one request and one streamed reply.
+func (c *Client) complete(ctx context.Context, history History, stream io.Writer) (Message, error) {
 	// Reasoning is off on purpose. The stream and history still carry
 	// reasoning_details so switching it back on needs no other change.
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":     c.model,
 		"messages":  []map[string]any(history),
 		"reasoning": map[string]any{"enabled": false},
 		"stream":    true,
-	})
+	}
+	if schemas := c.tools.schemas(); schemas != nil {
+		payload["tools"] = schemas
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return Message{}, err
 	}

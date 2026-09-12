@@ -10,12 +10,25 @@ func (h History) WithUser(text string) History {
 	return append(h, map[string]any{"role": "user", "content": text})
 }
 
-// WithAssistant appends an assistant turn.
+// WithAssistant appends an assistant turn, preceded by the tool calls and tool
+// results that produced it.
 func (h History) WithAssistant(msg Message) History {
+	h = append(h, msg.Steps...)
 	return append(h, map[string]any{
 		"role":              "assistant",
 		"content":           msg.Content,
 		"reasoning_details": msg.ReasoningDetails,
+	})
+}
+
+// WithToolCalls appends the assistant turn that asked for tools. The results
+// follow it as tool turns, one for each call.
+func (h History) WithToolCalls(msg Message) History {
+	return append(h, map[string]any{
+		"role":              "assistant",
+		"content":           msg.Content,
+		"reasoning_details": msg.ReasoningDetails,
+		"tool_calls":        wireCalls(msg.ToolCalls),
 	})
 }
 
@@ -29,13 +42,14 @@ func (h History) DropLast() History {
 }
 
 // Trim keeps the newest limit messages. Whole turns are dropped so the history
-// never starts on an assistant reply.
+// never starts on an assistant reply, and never on a tool result whose call is
+// already gone.
 func (h History) Trim(limit int) History {
 	if len(h) <= limit {
 		return h
 	}
 	drop := len(h) - limit
-	if drop%2 != 0 {
+	for drop < len(h) && h[drop]["role"] != "user" {
 		drop++
 	}
 	if drop >= len(h) {

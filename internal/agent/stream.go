@@ -15,6 +15,7 @@ type streamChunk struct {
 			Content          string           `json:"content"`
 			Reasoning        string           `json:"reasoning"`
 			ReasoningDetails []map[string]any `json:"reasoning_details"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
 		} `json:"delta"`
 	} `json:"choices"`
 	Error map[string]any `json:"error"`
@@ -24,6 +25,7 @@ func readStream(r io.Reader, out io.Writer) (Message, error) {
 	var msg Message
 	var content strings.Builder
 	inReasoning := false
+	printed := false
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -54,6 +56,7 @@ func readStream(r io.Reader, out io.Writer) (Message, error) {
 				inReasoning = true
 			}
 			fmt.Fprint(out, delta.Reasoning)
+			printed = true
 		}
 		if delta.Content != "" {
 			if inReasoning {
@@ -62,16 +65,20 @@ func readStream(r io.Reader, out io.Writer) (Message, error) {
 			}
 			fmt.Fprint(out, delta.Content)
 			content.WriteString(delta.Content)
+			printed = true
 		}
 		msg.ReasoningDetails = mergeReasoningDetails(msg.ReasoningDetails, delta.ReasoningDetails)
+		msg.ToolCalls = mergeToolCalls(msg.ToolCalls, delta.ToolCalls)
 	}
 	if err := scanner.Err(); err != nil {
 		return msg, err
 	}
-	fmt.Fprintln(out)
+	if printed {
+		fmt.Fprintln(out)
+	}
 
 	msg.Content = content.String()
-	if msg.Content == "" {
+	if msg.Content == "" && len(msg.ToolCalls) == 0 {
 		return msg, errors.New("empty response from model")
 	}
 	return msg, nil
