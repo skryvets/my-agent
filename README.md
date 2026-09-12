@@ -48,6 +48,13 @@ export OPENROUTER_API_KEY=sk-or-...
 go run .
 ```
 
+Optionally set `MY_AGENT_MODEL` to override the model, for example:
+
+```sh
+export MY_AGENT_MODEL=openai/gpt-4o
+go run .
+```
+
 Type a message at the `you>` prompt and press enter. The whole conversation is sent back on every turn. Ctrl-C or Ctrl-D exits.
 
 The answer streams in as it arrives. A failed turn prints the error and drops the unanswered message, leaving the session alive.
@@ -99,7 +106,7 @@ Only one instance may poll `getUpdates` at a time, so keep the service at a sing
 
 ## Configuration
 
-The model is set by the `DefaultModel` constant in `internal/agent/agent.go`.
+The model is set by the `MY_AGENT_MODEL` environment variable. The agent reads it at startup; if unset `Model` is the empty string and OpenRouter uses its own default.
 
 ## How a turn works
 
