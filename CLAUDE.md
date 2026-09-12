@@ -9,10 +9,17 @@ stay that way unless there is a reason the standard library cannot cover.
 ```
 main.go                              flag parsing and wiring, nothing else
 internal/agent/                      the model
-  agent.go                           Client, Chat, Model
+  agent.go                           Client, Model, one request
+  loop.go                            the tool-calling loop
+  tool.go                            the Tool interface and the registry
+  toolcall.go                        reassembling streamed tool_calls
   stream.go                          server-sent events parsing
   reasoning.go                       reassembling streamed reasoning_details
   history.go                         a conversation in the API's wire format
+internal/tools/                      what the agent can do
+  shell.go                           run a command
+  file.go                            read a file, write a file
+  fetch.go                           get a URL
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
   telegram.go                        Run, configuration from the environment
@@ -31,13 +38,19 @@ internal/communication/telegram/     Telegram bot connector
   stream)`), declared in the connector that consumes it. Adding a connector is a
   new folder here plus a branch in `main.go` - do not touch `internal/agent`
 - conversation state is `agent.History`. Build turns with `WithUser`,
-  `WithAssistant`, `DropLast` and `Trim` rather than assembling
-  `map[string]any` in a connector
+  `WithAssistant`, `WithToolCalls`, `DropLast` and `Trim` rather than assembling
+  `map[string]any` in a connector. A `Message` carries the tool turns that
+  produced it in `Steps`, and `WithAssistant` puts them back, so a connector
+  keeps the whole round without knowing the tool wire format
+- a tool is a type in `internal/tools` that satisfies `agent.Tool`. Adding one
+  is a new file there plus a line in `main.go` - `internal/agent` stays a loop
+  that knows no tool by name. A tool reports a failure as text for the model,
+  and returns an error only when the call itself was malformed
 - a failed turn is reported and dropped, never fatal. Only `main.go` calls
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
   carrying two
-- reasoning is deliberately disabled in `Chat`. The reassembly code in
+- reasoning is deliberately disabled in `complete`. The reassembly code in
   `reasoning.go` is kept for when it is switched back on - do not delete it as
   dead code, and do not enable reasoning without being asked
 - the README carries two mermaid diagrams, one of the package structure and one
