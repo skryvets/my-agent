@@ -107,6 +107,9 @@ func (b *Bot) command(ctx context.Context, chatID int64, text string) (handled, 
 		b.forget(ctx, chatID)
 		b.reply(ctx, chatID, "Conversation cleared.")
 		return true, true
+	case "/task":
+		b.task(ctx, chatID, text)
+		return true, false
 	}
 	return false, false
 }
@@ -129,9 +132,11 @@ func (b *Bot) help() string {
 	if b.sandbox != nil {
 		reset = "/reset - forget this conversation and throw away its workspace\n"
 	}
-	return "Send me a message and I will answer with " + b.agent.Model() + ".\n\n" +
-		reset +
-		"/help - show this message"
+	help := "Send me a message and I will answer with " + b.agent.Model() + ".\n\n"
+	if b.tasks != nil {
+		help += "/task owner/name what to change - change a repository and open a pull request\n"
+	}
+	return help + reset + "/help - show this message"
 }
 
 func (b *Bot) reply(ctx context.Context, chatID int64, text string) {

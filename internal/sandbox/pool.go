@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -123,10 +124,30 @@ func (p *Pool) container(ctx context.Context) (*Container, error) {
 		return held.container, nil
 	}
 
-	container, err := p.start(ctx, key)
+	container, err := p.start(ctx, key, "")
 	if err != nil {
 		return nil, err
 	}
 	p.running[key] = &entry{container: container, lastUse: time.Now()}
 	return container, nil
+}
+
+// Bind starts the container of a conversation on a host directory, which the
+// container sees as its working directory. A task uses it to work on a real
+// checkout that the agent process cloned, so the container still needs no
+// network and never sees the token.
+func (p *Pool) Bind(ctx context.Context, key, dir string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if _, taken := p.running[key]; taken {
+		return fmt.Errorf("%s already has a container", key)
+	}
+
+	container, err := p.start(ctx, key, dir)
+	if err != nil {
+		return err
+	}
+	p.running[key] = &entry{container: container, lastUse: time.Now()}
+	return nil
 }

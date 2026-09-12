@@ -232,3 +232,50 @@ func TestAConversationWithNoNameStillGetsAContainer(t *testing.T) {
 		t.Errorf("an unnamed conversation got no container: %#v", fake.seen())
 	}
 }
+
+func TestBindStartsAContainerOnAHostDirectory(t *testing.T) {
+	fake := newFakeDocker(t)
+	pool := newTestPool(t, fake, Options{})
+	ctx := context.Background()
+
+	if err := pool.Bind(ctx, "task-1", "/host/checkout"); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+
+	body := fake.body("POST /containers/create")
+	if !strings.Contains(body, `"Binds":["/host/checkout:`+workDir+`"]`) {
+		t.Errorf("the checkout was not mounted: %s", body)
+	}
+	if !strings.Contains(body, `"NetworkMode":"none"`) {
+		t.Errorf("a bound container reached the network: %s", body)
+	}
+
+	// The tools of that run reach the same container.
+	if _, err := pool.Run(conversation.WithKey(ctx, "task-1"), "ls"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	created := 0
+	for _, request := range fake.seen() {
+		if request == "POST /containers/create" {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Errorf("%d containers were created, want the bound one to be reused", created)
+	}
+
+	// One conversation has one container, so a second bind is a mistake.
+	if err := pool.Bind(ctx, "task-1", "/host/checkout"); err == nil {
+		t.Error("a second container was bound to the same conversation")
+	}
+}
+
+func TestBindReportsAContainerThatWillNotStart(t *testing.T) {
+	fake := newFakeDocker(t)
+	pool := newTestPool(t, fake, Options{})
+	fake.fail = "/containers/create"
+
+	if err := pool.Bind(context.Background(), "task-1", "/host/checkout"); err == nil {
+		t.Fatal("expected an error")
+	}
+}

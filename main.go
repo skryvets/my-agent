@@ -13,6 +13,7 @@ import (
 	"github.com/skryvets/my-agent/internal/communication/telegram"
 	"github.com/skryvets/my-agent/internal/communication/terminal"
 	"github.com/skryvets/my-agent/internal/sandbox"
+	"github.com/skryvets/my-agent/internal/task"
 	"github.com/skryvets/my-agent/internal/tools"
 )
 
@@ -22,6 +23,7 @@ func main() {
 	image := flag.String("image", sandbox.DefaultImage, "the image the sandbox containers run")
 	workdir := flag.String("workdir", ".", "the host directory the tools work in, without -sandbox")
 	gated := flag.Bool("approval", true, "ask before a tool call the policy does not allow by itself")
+	stateDir := flag.String("state", "state", "the directory the task runs are written to")
 	flag.Parse()
 
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
@@ -34,11 +36,13 @@ func main() {
 
 	var workspace tools.Workspace = tools.Host{Dir: *workdir}
 	var options []telegram.Option
+	var pool *sandbox.Pool
 	if *boxed {
-		pool, err := sandbox.New(ctx, sandbox.Options{Image: *image})
+		started, err := sandbox.New(ctx, sandbox.Options{Image: *image})
 		if err != nil {
 			log.Fatal(err)
 		}
+		pool = started
 		// The reaper also clears up when ctx ends, but main can return
 		// first, so the containers are removed here where it is certain.
 		defer pool.Shutdown(context.WithoutCancel(ctx))
@@ -62,6 +66,25 @@ func main() {
 	if *asBot {
 		if *gated {
 			options = append(options, telegram.WithApproval(broker))
+		}
+		// A task needs a container to work in and a token to push with.
+		token := os.Getenv("GITHUB_TOKEN")
+		switch {
+		case pool == nil:
+			log.Print("/task is off: start me with -sandbox")
+		case token == "":
+			log.Print("/task is off: GITHUB_TOKEN is not set")
+		default:
+			options = append(options, telegram.WithTasks(&task.Runner{
+				Agent: model,
+				// Naming the change needs no tool, and a question
+				// that carries none is answered sooner.
+				Plain:   agent.New(apiKey),
+				Sandbox: pool,
+				GitHub:  task.GitHub{Token: token},
+				Store:   task.Store{Dir: *stateDir},
+				Token:   token,
+			}))
 		}
 		if err := telegram.Run(ctx, model, options...); err != nil {
 			log.Fatal(err)

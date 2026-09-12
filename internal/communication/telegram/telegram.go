@@ -18,6 +18,7 @@ import (
 
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/approval"
+	"github.com/skryvets/my-agent/internal/task"
 )
 
 // Agent answers a conversation. *agent.Client satisfies it.
@@ -39,6 +40,13 @@ type Approvals interface {
 	Handle(ask approval.Ask)
 }
 
+// Tasks does a coding job end to end and opens a pull request.
+// *task.Runner satisfies it.
+type Tasks interface {
+	Start(ctx context.Context, chat, repository, instruction string, report task.Report) error
+	Interrupted(ctx context.Context) []task.Run
+}
+
 // An Option changes the bot before it starts polling.
 type Option func(*Bot)
 
@@ -51,6 +59,12 @@ func WithSandbox(box Sandbox) Option {
 // by itself, with a button for yes and one for no.
 func WithApproval(approvals Approvals) Option {
 	return func(b *Bot) { approvals.Handle(b.ask) }
+}
+
+// WithTasks answers /task, which clones a repository, changes it and opens a
+// pull request.
+func WithTasks(tasks Tasks) Option {
+	return func(b *Bot) { b.tasks = tasks }
 }
 
 // Run reads the bot configuration from the environment and serves until ctx is
@@ -79,6 +93,7 @@ func Run(ctx context.Context, model Agent, options ...Option) error {
 	for _, option := range options {
 		option(bot)
 	}
+	bot.reportInterrupted(ctx)
 	if err := bot.run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}

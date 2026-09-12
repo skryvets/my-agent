@@ -2,6 +2,10 @@
 
 A small agent that talks to a model through the [OpenRouter](https://openrouter.ai) chat completions API, runs the tools the model asks for, and streams the answer as it arrives.
 
+One message from a phone - "fix the lint warning in my-agent" - clones the
+repository, changes it in a container, runs the tests, pushes a branch and
+answers with a link to the pull request.
+
 It shows five things that are easy to get wrong:
 
 - server-sent events parsing, including OpenRouter keep-alive comment lines
@@ -39,6 +43,10 @@ flowchart LR
         pool["Pool<br/>one container per chat"]
     end
 
+    subgraph job ["internal/task"]
+        runner["Runner<br/>clone, work, push, open"]
+    end
+
     api(["OpenRouter<br/>chat completions"])
     dock(["Docker Engine<br/>unix socket"])
 
@@ -57,6 +65,10 @@ flowchart LR
     sh -->|Workspace| pool
     pool --> dock
     sh -->|results| chat
+    tg -->|"/task"| runner
+    runner --> chat
+    runner -->|bind the checkout| pool
+    runner --> gh(["GitHub<br/>git, REST"])
 ```
 
 A connector depends on the agent, never the other way round.
@@ -192,6 +204,55 @@ terminal chat the same question is a `[y/N]` prompt.
 A refused call is reported to the model as text, not as a failure, so it
 explains what it wanted and tries another way instead of asking again.
 
+## A task, end to end
+
+`/task owner/name what to change` is the whole point of the project. From a
+phone:
+
+```
+/task skryvets/my-agent fix the lint warning in internal/agent
+```
+
+The bot answers as it goes, because a run takes minutes:
+
+```
+Cloning skryvets/my-agent
+Working on it
+I removed the unused import in stream.go and go vet is clean.
+Pushing my-agent/20260912-134544-1
+Pull request open: https://github.com/skryvets/my-agent/pull/8
+```
+
+What happens, and where:
+
+| Step | Where it runs |
+| --- | --- |
+| clone the repository | the agent process, with the token |
+| lend the checkout to a container | Docker, `--network none` |
+| read, change and test the code | the model, inside that container |
+| name the change | the model, with no tools |
+| commit and push the branch | the agent process, with the token |
+| open the pull request | the agent process, GitHub REST |
+
+**git and the GitHub API never run inside the container.** The model therefore
+never sees the token and never needs a network: it works on a checkout the
+agent lends it through a bind mount, and the two steps that leave the machine
+are made by code rather than by the model. It is also the answer to a plain
+conflict: a container with `--network none` cannot clone.
+
+`GITHUB_TOKEN` needs write access to the repository. `/task` needs `-sandbox`
+as well, and says so when it is missing.
+
+Every run is written to `-state` (`state` by default) at each step, so a
+restart knows what was under way. A run it caught in the middle is marked and
+reported to its chat, with the branch it reached:
+
+```
+A restart stopped the task on skryvets/my-agent (fix the lint warning).
+It reached the state "working" on the branch my-agent/20260912-134544-1.
+Send it again to start over.
+```
+
 ## Telegram bot
 
 Talk to [@BotFather](https://t.me/BotFather), send `/newbot`, and keep the token it gives you.
@@ -207,6 +268,8 @@ The bot long-polls `getUpdates` for `message` updates, keeps one conversation pe
 
 - `/start`, `/help` - what the bot does
 - `/reset` - forget the conversation in that chat, and throw away its container
+
+- `/task owner/name what to change` - change a repository and open a pull request
 
 A tool call the policy does not allow by itself arrives as a question with
 **Approve** and **Deny** under it, and the turn waits for the answer.
@@ -234,14 +297,18 @@ The bot has no HTTP server, so it is a worker service: no port, no healthcheck. 
 }
 ```
 
-Set `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USERS` as service variables. The same command can be typed into Settings -> Deploy -> Custom Start Command instead, but the checked-in file survives a service being recreated.
+Set `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USERS` as service variables, and `GITHUB_TOKEN` for `/task`. The same command can be typed into Settings -> Deploy -> Custom Start Command instead, but the checked-in file survives a service being recreated.
 
 Only one instance may poll `getUpdates` at a time, so keep the service at a single replica.
 
 Railway gives a worker service no Docker socket, so `-sandbox` does not work
-there. The deployed bot runs its tools inside its own Railway container, which
-is isolation of a kind, but one container for every chat instead of one for
-each. Run the bot on a machine with Docker to get the real thing.
+there, and `/task` needs it. The deployed bot answers and runs its tools inside
+its own Railway container, which is isolation of a kind, but one container for
+every chat instead of one for each. Run the bot on a machine with Docker to get
+the sandbox and the pull requests.
+
+`-state` should point at a Railway volume, so the runs of a task survive the
+restart of a deployment.
 
 ## Configuration
 
@@ -306,6 +373,7 @@ internal/agent/                      the model: OpenRouter client, SSE stream, t
 internal/tools/                      what the agent can do: shell, files, fetch
 internal/approval/                   the person in the loop: policy, guard, broker
 internal/conversation/               which conversation a call belongs to
+internal/task/                       a job end to end: clone, work, push, open a pull request
 internal/sandbox/                    a Docker container for each conversation
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
