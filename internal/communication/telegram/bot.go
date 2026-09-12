@@ -13,6 +13,7 @@ type Bot struct {
 	client    *client
 	agent     Agent
 	sandbox   Sandbox
+	tasks     Tasks
 	allowed   map[int64]bool
 	retryBase time.Duration
 

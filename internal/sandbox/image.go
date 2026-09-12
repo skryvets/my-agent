@@ -14,20 +14,25 @@ import (
 const label = "my-agent.conversation"
 
 // start creates and starts one container. It has no network of its own, so a
-// command inside it cannot reach the internet or the host.
-func (p *Pool) start(ctx context.Context, key string) (*Container, error) {
+// command inside it cannot reach the internet or the host. A bind, when there
+// is one, is the host directory the container works on.
+func (p *Pool) start(ctx context.Context, key, bind string) (*Container, error) {
 	var created struct {
 		ID string `json:"Id"`
+	}
+	host := map[string]any{
+		"NetworkMode": "none",
+		"AutoRemove":  false,
+	}
+	if bind != "" {
+		host["Binds"] = []string{bind + ":" + workDir}
 	}
 	config := map[string]any{
 		"Image":      p.image,
 		"Cmd":        []string{"sleep", "infinity"},
 		"WorkingDir": workDir,
 		"Labels":     map[string]string{label: key},
-		"HostConfig": map[string]any{
-			"NetworkMode": "none",
-			"AutoRemove":  false,
-		},
+		"HostConfig": host,
 	}
 	if err := p.docker.call(ctx, http.MethodPost, "/containers/create", config, &created); err != nil {
 		return nil, err

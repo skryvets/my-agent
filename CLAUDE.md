@@ -26,6 +26,12 @@ internal/approval/                   the person in the loop
   policy.go                          what runs without a question
   guard.go                           a tool that asks first
 internal/conversation/               which conversation a call belongs to
+internal/task/                       a job end to end, ending in a pull request
+  task.go                            Runner, Start, the runs a restart caught
+  work.go                            the stages of one run
+  git.go                             git on the host, where the token is
+  github.go                          the REST calls that open the request
+  store.go                           the runs on disk
 internal/sandbox/                    one container for each conversation
   docker.go                          the Engine API over the unix socket
   container.go                       exec in one container
@@ -38,6 +44,7 @@ internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
   telegram.go                        Run, options, configuration from the environment
   approval.go                        the Approve and Deny buttons
+  task.go                            the /task command
   bot.go                             the getUpdates poll loop and its backoff
   session.go                         per-chat goroutine, commands, history
   client.go                          Bot API transport
@@ -75,9 +82,16 @@ internal/communication/telegram/     Telegram bot connector
   rather than working around the guard, and keep anything that leaves the
   sandbox out of it. A refused call is reported to the model as text, so it
   tries something else instead of asking again
-- a connector declares the small interface it needs (`Sandbox`, `Approvals`)
-  and main passes the real thing in through an `Option`. That is how the bot
-  answers the questions of the tools without the tools knowing about Telegram
+- a connector declares the small interface it needs (`Sandbox`, `Approvals`,
+  `Tasks`) and main passes the real thing in through an `Option`. That is how
+  the bot answers the questions of the tools without the tools knowing about
+  Telegram
+- git and the GitHub API run in the agent process, never in the container. The
+  model must not see the token and must not need a network, so a task clones on
+  the host and lends the checkout to the container with a bind. Do not move
+  either one inside
+- every error that reaches a chat passes through `Git.hide`, because the clone
+  address carries the token
 - a failed turn is reported and dropped, never fatal. Only `main.go` calls
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually

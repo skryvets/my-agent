@@ -4,6 +4,9 @@
 *.test
 *.out
 
+# Task runs
+/state
+
 # Env / secrets
 .env
 .env.*
