@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/skryvets/my-agent/internal/agent"
@@ -55,6 +56,9 @@ func (b *Bot) session(ctx context.Context, chatID int64) chan string {
 // serve owns the history for one chat, so no lock is needed around it.
 func (b *Bot) serve(ctx context.Context, chatID int64, queue <-chan string) {
 	var history agent.History
+	if b.sandbox != nil {
+		ctx = b.sandbox.WithKey(ctx, chatKey(chatID))
+	}
 
 	for {
 		var text string
@@ -98,15 +102,33 @@ func (b *Bot) command(ctx context.Context, chatID int64, text string) (handled, 
 		b.reply(ctx, chatID, b.help())
 		return true, false
 	case "/reset":
+		b.forget(ctx, chatID)
 		b.reply(ctx, chatID, "Conversation cleared.")
 		return true, true
 	}
 	return false, false
 }
 
+// forget throws away the workspace of one chat, so /reset loses the files the
+// agent wrote as well as the conversation.
+func (b *Bot) forget(ctx context.Context, chatID int64) {
+	if b.sandbox == nil {
+		return
+	}
+	if err := b.sandbox.Close(ctx, chatKey(chatID)); err != nil {
+		log.Printf("closing the workspace of chat %d: %v", chatID, err)
+	}
+}
+
+func chatKey(chatID int64) string { return strconv.FormatInt(chatID, 10) }
+
 func (b *Bot) help() string {
+	reset := "/reset - forget this conversation\n"
+	if b.sandbox != nil {
+		reset = "/reset - forget this conversation and throw away its workspace\n"
+	}
 	return "Send me a message and I will answer with " + b.agent.Model() + ".\n\n" +
-		"/reset - forget this conversation\n" +
+		reset +
 		"/help - show this message"
 }
 

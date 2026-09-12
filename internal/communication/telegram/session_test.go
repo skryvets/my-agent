@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -144,4 +145,73 @@ func TestDispatchTellsSenderWhenQueueIsFull(t *testing.T) {
 	if got := fake.nextSent(t); !strings.Contains(got, "still working") {
 		t.Fatalf("reply = %q", got)
 	}
+}
+
+func TestServeNamesAndThrowsAwayTheWorkspace(t *testing.T) {
+	fake := newFakeTelegram(t)
+	box := &fakeSandbox{}
+	var keyed string
+	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
+		return agent.Message{Content: "answer"}, nil
+	})
+	bot.sandbox = box
+	bot.agent = keyReadingAgent{key: &keyed, box: box}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bot.dispatch(ctx, textUpdate(1, 42, 99, "hello"))
+	fake.nextSent(t)
+
+	keys, closed := box.seen()
+	if len(keys) != 1 || keys[0] != "99" {
+		t.Errorf("keys = %#v, want the chat id", keys)
+	}
+	if len(closed) != 0 {
+		t.Errorf("the workspace was closed too early: %#v", closed)
+	}
+	if keyed != "99" {
+		t.Errorf("the chat did not reach the agent through the context: %q", keyed)
+	}
+
+	bot.dispatch(ctx, textUpdate(2, 42, 99, "/reset"))
+	fake.nextSent(t)
+	if _, closed := box.seen(); len(closed) != 1 || closed[0] != "99" {
+		t.Errorf("closed = %#v, want the chat id", closed)
+	}
+
+	bot.dispatch(ctx, textUpdate(3, 42, 99, "/help"))
+	if got := fake.nextSent(t); !strings.Contains(got, "throw away its workspace") {
+		t.Errorf("help does not mention the workspace: %q", got)
+	}
+}
+
+func TestServeReportsAWorkspaceThatWillNotClose(t *testing.T) {
+	fake := newFakeTelegram(t)
+	bot := newTestBot(fake, func(agent.History) (agent.Message, error) {
+		return agent.Message{Content: "answer"}, nil
+	})
+	bot.sandbox = &fakeSandbox{err: errors.New("the daemon is gone")}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// A workspace that will not close must still clear the conversation.
+	bot.dispatch(ctx, textUpdate(1, 42, 99, "/reset"))
+	if got := fake.nextSent(t); got != "Conversation cleared." {
+		t.Errorf("reset reply = %q", got)
+	}
+}
+
+// keyReadingAgent reports the chat key the bot put into the context.
+type keyReadingAgent struct {
+	key *string
+	box *fakeSandbox
+}
+
+func (k keyReadingAgent) Model() string { return "test-model" }
+
+func (k keyReadingAgent) Chat(ctx context.Context, _ agent.History, _ io.Writer) (agent.Message, error) {
+	*k.key, _ = ctx.Value(k.box).(string)
+	return agent.Message{Content: "answer"}, nil
 }

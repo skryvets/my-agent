@@ -12,6 +12,7 @@ import (
 type Bot struct {
 	client    *client
 	agent     Agent
+	sandbox   Sandbox
 	allowed   map[int64]bool
 	retryBase time.Duration
 

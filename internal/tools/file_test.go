@@ -2,34 +2,51 @@ package tools
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestWriteFileThenReadFile(t *testing.T) {
-	dir := t.TempDir()
-	write := WriteFile{Dir: dir}
-	read := ReadFile{Dir: dir}
+func TestReadFileAsksTheWorkspace(t *testing.T) {
+	workspace := &fakeWorkspace{output: "package pkg\n"}
+	read := ReadFile{Workspace: workspace}
 
-	out, err := write.Call(context.Background(), []byte(`{"path":"pkg/hello.go","content":"package pkg\n"}`))
+	got, err := read.Call(context.Background(), []byte(`{"path":"pkg/hello.go"}`))
 	if err != nil {
-		t.Fatalf("write: %v", err)
+		t.Fatalf("Call: %v", err)
+	}
+	if workspace.path != "pkg/hello.go" {
+		t.Errorf("path = %q", workspace.path)
+	}
+	if got != "package pkg\n" {
+		t.Errorf("content = %q", got)
+	}
+}
+
+func TestWriteFileAsksTheWorkspace(t *testing.T) {
+	workspace := &fakeWorkspace{}
+	write := WriteFile{Workspace: workspace}
+
+	out, err := write.Call(context.Background(), []byte(`{"path":"hello.go","content":"package pkg\n"}`))
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if workspace.path != "hello.go" || workspace.content != "package pkg\n" {
+		t.Errorf("wrote %q to %q", workspace.content, workspace.path)
 	}
 	if !strings.Contains(out, "wrote 12 bytes") {
 		t.Errorf("out = %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "pkg", "hello.go")); err != nil {
-		t.Fatalf("the parent directory was not created: %v", err)
-	}
+}
 
-	got, err := read.Call(context.Background(), []byte(`{"path":"pkg/hello.go"}`))
+func TestFileToolsCutLongContent(t *testing.T) {
+	workspace := &fakeWorkspace{output: strings.Repeat("a", outputLimit*2)}
+
+	got, err := ReadFile{Workspace: workspace}.Call(context.Background(), []byte(`{"path":"big.txt"}`))
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("Call: %v", err)
 	}
-	if got != "package pkg\n" {
-		t.Errorf("content = %q", got)
+	if !strings.Contains(got, "bytes cut") {
+		t.Error("long content was not cut")
 	}
 }
 
@@ -55,64 +72,19 @@ func TestFileToolsDescribeThemselves(t *testing.T) {
 	}
 }
 
-func TestFileToolsRefusePathsOutsideTheDirectory(t *testing.T) {
-	dir := t.TempDir()
-	outside := filepath.Join(dir, "..", "escaped.txt")
-
-	for name, call := range map[string]func(string) error{
-		"read": func(path string) error {
-			_, err := ReadFile{Dir: dir}.Call(context.Background(), []byte(`{"path":"`+path+`"}`))
-			return err
-		},
-		"write": func(path string) error {
-			_, err := WriteFile{Dir: dir}.Call(context.Background(), []byte(`{"path":"`+path+`","content":"x"}`))
-			return err
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := call("../escaped.txt"); err == nil {
-				t.Error("a relative escape was allowed")
-			}
-			if err := call(outside); err == nil {
-				t.Error("an absolute path outside the directory was allowed")
-			}
-			if err := call(""); err == nil {
-				t.Error("an empty path was allowed")
-			}
-		})
-	}
-}
-
 func TestFileToolsReportTheirErrors(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := (ReadFile{Dir: dir}).Call(context.Background(), []byte(`{"path":"absent.txt"}`)); err == nil {
-		t.Error("expected an error for a file that is not there")
-	}
-	if _, err := (ReadFile{Dir: dir}).Call(context.Background(), []byte(`{oops`)); err == nil {
-		t.Error("expected an error for bad arguments")
-	}
-	if _, err := (WriteFile{Dir: dir}).Call(context.Background(), []byte(`{oops`)); err == nil {
-		t.Error("expected an error for bad arguments")
-	}
-	// A file where a directory must go stops the write.
-	if err := os.WriteFile(filepath.Join(dir, "blocked"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := (WriteFile{Dir: dir}).Call(context.Background(), []byte(`{"path":"blocked/file.txt","content":"x"}`)); err == nil {
-		t.Error("expected an error when the parent is a file")
-	}
-}
+	broken := &fakeWorkspace{err: errWorkspace}
 
-func TestReadFileAcceptsAnAbsolutePathInsideTheDirectory(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "in.txt"), []byte("here"), 0o644); err != nil {
-		t.Fatal(err)
+	if _, err := (ReadFile{Workspace: broken}).Call(context.Background(), []byte(`{"path":"a.txt"}`)); err == nil {
+		t.Error("expected the workspace failure")
 	}
-	got, err := ReadFile{Dir: dir}.Call(context.Background(), []byte(`{"path":"`+filepath.Join(dir, "in.txt")+`"}`))
-	if err != nil {
-		t.Fatalf("read: %v", err)
+	if _, err := (WriteFile{Workspace: broken}).Call(context.Background(), []byte(`{"path":"a.txt","content":"x"}`)); err == nil {
+		t.Error("expected the workspace failure")
 	}
-	if got != "here" {
-		t.Errorf("content = %q", got)
+	if _, err := (ReadFile{}).Call(context.Background(), []byte(`{oops`)); err == nil {
+		t.Error("expected an error for bad arguments")
+	}
+	if _, err := (WriteFile{}).Call(context.Background(), []byte(`{oops`)); err == nil {
+		t.Error("expected an error for bad arguments")
 	}
 }
