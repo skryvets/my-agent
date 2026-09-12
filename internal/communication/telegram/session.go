@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/conversation"
 )
 
 const (
@@ -56,9 +57,10 @@ func (b *Bot) session(ctx context.Context, chatID int64) chan string {
 // serve owns the history for one chat, so no lock is needed around it.
 func (b *Bot) serve(ctx context.Context, chatID int64, queue <-chan string) {
 	var history agent.History
-	if b.sandbox != nil {
-		ctx = b.sandbox.WithKey(ctx, chatKey(chatID))
-	}
+
+	// The tools and the questions they raise both belong to this chat, and
+	// find it through the context.
+	ctx = conversation.WithKey(ctx, chatKey(chatID))
 
 	for {
 		var text string

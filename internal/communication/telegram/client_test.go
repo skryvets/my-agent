@@ -27,7 +27,7 @@ func TestGetUpdatesParsesMessagesAndSetsPollParameters(t *testing.T) {
 	if payload["offset"] != float64(5) || payload["timeout"] != float64(pollSeconds) {
 		t.Errorf("payload = %#v", payload)
 	}
-	if !reflect.DeepEqual(payload["allowed_updates"], []any{"message"}) {
+	if !reflect.DeepEqual(payload["allowed_updates"], []any{"message", "callback_query"}) {
 		t.Errorf("allowed_updates = %#v", payload["allowed_updates"])
 	}
 }

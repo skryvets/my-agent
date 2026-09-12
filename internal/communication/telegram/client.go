@@ -74,7 +74,7 @@ func (c *client) call(ctx context.Context, method string, payload, result any) e
 func (c *client) getUpdates(ctx context.Context, offset int64) ([]update, error) {
 	payload := map[string]any{
 		"timeout":         pollSeconds,
-		"allowed_updates": []string{"message"},
+		"allowed_updates": []string{"message", "callback_query"},
 	}
 	if offset > 0 {
 		payload["offset"] = offset
@@ -95,6 +95,38 @@ func (c *client) sendMessage(ctx context.Context, chatID int64, text string) err
 		}
 	}
 	return nil
+}
+
+// sendKeyboard sends one message with buttons under it and returns the id of
+// the message, so the buttons can be replaced by the decision later.
+func (c *client) sendKeyboard(ctx context.Context, chatID int64, text string, buttons [][]button) (int64, error) {
+	payload := map[string]any{
+		"chat_id":      chatID,
+		"text":         text,
+		"reply_markup": map[string]any{"inline_keyboard": buttons},
+	}
+
+	var sent struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if err := c.call(ctx, "sendMessage", payload, &sent); err != nil {
+		return 0, err
+	}
+	return sent.MessageID, nil
+}
+
+// answerCallback stops the clock on the button a person pressed. Telegram
+// keeps showing it as pressed until this call arrives.
+func (c *client) answerCallback(ctx context.Context, queryID, text string) error {
+	payload := map[string]any{"callback_query_id": queryID, "text": text}
+	return c.call(ctx, "answerCallbackQuery", payload, nil)
+}
+
+// editMessage replaces the text of a message and drops the buttons with it,
+// so a question cannot be answered twice.
+func (c *client) editMessage(ctx context.Context, chatID, messageID int64, text string) error {
+	payload := map[string]any{"chat_id": chatID, "message_id": messageID, "text": text}
+	return c.call(ctx, "editMessageText", payload, nil)
 }
 
 func (c *client) sendChatAction(ctx context.Context, chatID int64, action string) error {

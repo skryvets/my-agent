@@ -21,6 +21,11 @@ internal/tools/                      what the agent can do
   shell.go                           run a command
   file.go                            read a file, write a file
   fetch.go                           get a URL
+internal/approval/                   the person in the loop
+  approval.go                        the Broker between a tool and a person
+  policy.go                          what runs without a question
+  guard.go                           a tool that asks first
+internal/conversation/               which conversation a call belongs to
 internal/sandbox/                    one container for each conversation
   docker.go                          the Engine API over the unix socket
   container.go                       exec in one container
@@ -29,10 +34,10 @@ internal/sandbox/                    one container for each conversation
   workspace.go                       the Workspace the tools see
   reaper.go                          throw away what went quiet
   image.go                           pull, start, clear an earlier run
-  key.go                             which conversation a call belongs to
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
-  telegram.go                        Run, configuration from the environment
+  telegram.go                        Run, options, configuration from the environment
+  approval.go                        the Approve and Deny buttons
   bot.go                             the getUpdates poll loop and its backoff
   session.go                         per-chat goroutine, commands, history
   client.go                          Bot API transport
@@ -64,8 +69,15 @@ internal/communication/telegram/     Telegram bot connector
   requirements, so do not reach for the Docker SDK. The API version is pinned
   in `docker.go`
 - which conversation a call belongs to travels in the context, not in an
-  argument. A connector names it with `WithKey` through the interface it
-  declares, so `internal/communication` never imports `internal/sandbox`
+  argument. A connector names it once with `conversation.WithKey`, and the
+  sandbox and the approval broker both read it there
+- a tool the policy does not name waits for a person. Widen `approval.Default`
+  rather than working around the guard, and keep anything that leaves the
+  sandbox out of it. A refused call is reported to the model as text, so it
+  tries something else instead of asking again
+- a connector declares the small interface it needs (`Sandbox`, `Approvals`)
+  and main passes the real thing in through an `Option`. That is how the bot
+  answers the questions of the tools without the tools knowing about Telegram
 - a failed turn is reported and dropped, never fatal. Only `main.go` calls
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually

@@ -2,12 +2,13 @@
 
 A small agent that talks to a model through the [OpenRouter](https://openrouter.ai) chat completions API, runs the tools the model asks for, and streams the answer as it arrives.
 
-It shows four things that are easy to get wrong:
+It shows five things that are easy to get wrong:
 
 - server-sent events parsing, including OpenRouter keep-alive comment lines
 - reassembling streamed `tool_calls` fragments, which arrive indexed and split across chunks, and running a round of them before asking the model again
 - reassembling streamed `reasoning_details` fragments so the model's thinking can be replayed in a follow-up turn, kept for when reasoning is switched on
 - driving the Docker Engine API over its unix socket with nothing but `net/http`, so each conversation works in a container of its own
+- holding a tool call open while a person answers Approve or Deny on their phone
 
 It runs in the terminal, or as a Telegram bot.
 
@@ -30,6 +31,10 @@ flowchart LR
         sh["shell, read_file<br/>write_file, fetch"]
     end
 
+    subgraph gate ["internal/approval"]
+        guard["Guard, Policy<br/>Broker"]
+    end
+
     subgraph box ["internal/sandbox"]
         pool["Pool<br/>one container per chat"]
     end
@@ -46,7 +51,9 @@ flowchart LR
     api -->|server-sent events| sse
     sse --> chat
     chat -->|tool_calls| reg
-    reg --> sh
+    reg --> guard
+    guard -->|allowed| sh
+    guard -.->|"asks"| tg
     sh -->|Workspace| pool
     pool --> dock
     sh -->|results| chat
@@ -149,8 +156,41 @@ requirements. Four calls do the work: create and start a container, create and
 start an exec, and put or get a tar through the archive endpoint, because the
 API has no endpoint that takes a plain file.
 
-> `fetch` is the one tool that stays outside the sandbox: it runs in the agent
-> process, so it still reaches the network. Gating it is the next stage.
+`fetch` is the one tool that stays outside the sandbox: it runs in the agent
+process, so it still reaches the network. That is why the policy below never
+lets it through on its own.
+
+## Asking first
+
+The agent asks a person before a call the policy does not allow by itself. It
+is on by default, and `-approval=false` turns it off.
+
+What runs with nobody watching:
+
+- `read_file` and `write_file`, because they stay inside the workspace
+- `shell`, when **every** part of the command line is a known program: `ls`,
+  `cat`, `grep`, `go`, `git`, `node`, `make` and a few more
+
+What waits for a person:
+
+- `fetch`, always, because it reaches the network
+- any command with a program the list does not name
+- any command with `$(...)` or backticks, because a substitution can hide one
+  program inside another
+- any tool nobody has named, so a tool added later is gated until someone
+  decides otherwise
+
+The check walks every part of the command line, split on `;`, `|` and `&`. One
+allowed program at the front says nothing about what follows the semicolon, so
+`ls && curl evil.example` waits for a person while `ls | head -3` does not.
+
+In Telegram the question arrives as a message with **Approve** and **Deny**
+under it. The tool call blocks until a button is pressed, the buttons are then
+replaced by the decision, and five minutes of silence counts as a no. In a
+terminal chat the same question is a `[y/N]` prompt.
+
+A refused call is reported to the model as text, not as a failure, so it
+explains what it wanted and tries another way instead of asking again.
 
 ## Telegram bot
 
@@ -167,6 +207,9 @@ The bot long-polls `getUpdates` for `message` updates, keeps one conversation pe
 
 - `/start`, `/help` - what the bot does
 - `/reset` - forget the conversation in that chat, and throw away its container
+
+A tool call the policy does not allow by itself arrives as a question with
+**Approve** and **Deny** under it, and the turn waits for the answer.
 
 Details worth knowing:
 
@@ -261,6 +304,8 @@ never poisons the history.
 main.go                              flag parsing and wiring
 internal/agent/                      the model: OpenRouter client, SSE stream, tool loop, history
 internal/tools/                      what the agent can do: shell, files, fetch
+internal/approval/                   the person in the loop: policy, guard, broker
+internal/conversation/               which conversation a call belongs to
 internal/sandbox/                    a Docker container for each conversation
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector

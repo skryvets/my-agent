@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/approval"
 )
 
 // Agent answers a conversation. *agent.Client satisfies it.
@@ -28,10 +29,14 @@ type Agent interface {
 // Sandbox is the throwaway workspace the tools of one chat work in.
 // *sandbox.Pool satisfies it. A bot without one runs its tools on the host.
 type Sandbox interface {
-	// WithKey names the chat whose workspace a call belongs to.
-	WithKey(ctx context.Context, key string) context.Context
 	// Close throws the workspace of one chat away.
 	Close(ctx context.Context, key string) error
+}
+
+// Approvals carries the questions of the tools to the person in the chat.
+// *approval.Broker satisfies it.
+type Approvals interface {
+	Handle(ask approval.Ask)
 }
 
 // An Option changes the bot before it starts polling.
@@ -40,6 +45,12 @@ type Option func(*Bot)
 // WithSandbox gives each chat its own workspace, which /reset throws away.
 func WithSandbox(box Sandbox) Option {
 	return func(b *Bot) { b.sandbox = box }
+}
+
+// WithApproval makes the bot ask before a tool call the policy does not allow
+// by itself, with a button for yes and one for no.
+func WithApproval(approvals Approvals) Option {
+	return func(b *Bot) { approvals.Handle(b.ask) }
 }
 
 // Run reads the bot configuration from the environment and serves until ctx is
@@ -63,6 +74,7 @@ func Run(ctx context.Context, model Agent, options ...Option) error {
 		allowed:   allowed,
 		retryBase: time.Second,
 		sessions:  map[int64]chan string{},
+		waiting:   map[string]chan bool{},
 	}
 	for _, option := range options {
 		option(bot)
