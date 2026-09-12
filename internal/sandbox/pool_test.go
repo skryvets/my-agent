@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/skryvets/my-agent/internal/conversation"
 )
 
 func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
@@ -73,7 +75,7 @@ func TestPoolStartsOneContainerForEachConversation(t *testing.T) {
 	fake.output = "hello\n"
 	pool := newTestPool(t, fake, Options{})
 
-	first := WithKey(context.Background(), "chat-1")
+	first := conversation.WithKey(context.Background(), "chat-1")
 	if _, err := pool.Run(first, "echo hello"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestPoolStartsOneContainerForEachConversation(t *testing.T) {
 		t.Errorf("%d containers were created for one conversation, want 1", created)
 	}
 
-	second := WithKey(context.Background(), "chat-2")
+	second := conversation.WithKey(context.Background(), "chat-2")
 	if _, err := pool.Run(second, "echo hello"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -129,7 +131,7 @@ func TestPoolStartsAContainerWithoutANetwork(t *testing.T) {
 func TestPoolCloseThrowsTheContainerAway(t *testing.T) {
 	fake := newFakeDocker(t)
 	pool := newTestPool(t, fake, Options{})
-	ctx := WithKey(context.Background(), "chat-1")
+	ctx := conversation.WithKey(context.Background(), "chat-1")
 
 	if _, err := pool.Run(ctx, "true"); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -165,7 +167,7 @@ func TestPoolReapsAContainerThatWentQuiet(t *testing.T) {
 	fake := newFakeDocker(t)
 	pool := newTestPool(t, fake, Options{Idle: 20 * time.Millisecond})
 
-	if _, err := pool.Run(WithKey(context.Background(), "chat-1"), "true"); err != nil {
+	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-1"), "true"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -183,7 +185,7 @@ func TestPoolShutdownRemovesEverythingItStarted(t *testing.T) {
 	fake := newFakeDocker(t)
 	pool := newTestPool(t, fake, Options{})
 
-	if _, err := pool.Run(WithKey(context.Background(), "chat-1"), "true"); err != nil {
+	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-1"), "true"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	pool.Shutdown(context.Background())
@@ -194,7 +196,7 @@ func TestPoolShutdownRemovesEverythingItStarted(t *testing.T) {
 
 	// A daemon that refuses is reported and does not stop the shutdown.
 	fake.fail = "/containers/container-1"
-	if _, err := pool.Run(WithKey(context.Background(), "chat-2"), "true"); err != nil {
+	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-2"), "true"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	pool.Shutdown(context.Background())
@@ -216,17 +218,17 @@ func TestPoolReportsAContainerThatWillNotStart(t *testing.T) {
 	}
 }
 
-func TestWithKeyNamesTheConversation(t *testing.T) {
-	pool := &Pool{}
-	ctx := pool.WithKey(context.Background(), "chat-7")
+func TestAConversationWithNoNameStillGetsAContainer(t *testing.T) {
+	fake := newFakeDocker(t)
+	pool := newTestPool(t, fake, Options{})
 
-	if got := keyOf(ctx); got != "chat-7" {
-		t.Errorf("key = %q", got)
+	if _, err := pool.Run(context.Background(), "true"); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
-	if got := keyOf(context.Background()); got != defaultKey {
-		t.Errorf("a context with no key = %q, want %q", got, defaultKey)
+	if err := pool.Close(context.Background(), conversation.Default); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
-	if got := keyOf(WithKey(context.Background(), "")); got != defaultKey {
-		t.Errorf("an empty key = %q, want %q", got, defaultKey)
+	if !fake.asked("DELETE /containers/container-1") {
+		t.Errorf("an unnamed conversation got no container: %#v", fake.seen())
 	}
 }

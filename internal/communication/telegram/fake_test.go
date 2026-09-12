@@ -120,6 +120,7 @@ func newTestBot(fake *fakeTelegram, answer func(agent.History) (agent.Message, e
 		agent:     fakeAgent{answer: answer},
 		retryBase: time.Millisecond,
 		sessions:  map[int64]chan string{},
+		waiting:   map[string]chan bool{},
 	}
 }
 
@@ -132,19 +133,11 @@ func textUpdate(id, userID, chatID int64, text string) update {
 	return update{UpdateID: id, Message: msg}
 }
 
-// fakeSandbox records the chat keys the bot named and closed.
+// fakeSandbox records the chats whose workspace the bot threw away.
 type fakeSandbox struct {
 	mu     sync.Mutex
-	keys   []string
 	closed []string
 	err    error
-}
-
-func (f *fakeSandbox) WithKey(ctx context.Context, key string) context.Context {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.keys = append(f.keys, key)
-	return context.WithValue(ctx, f, key)
 }
 
 func (f *fakeSandbox) Close(ctx context.Context, key string) error {
@@ -154,8 +147,8 @@ func (f *fakeSandbox) Close(ctx context.Context, key string) error {
 	return f.err
 }
 
-func (f *fakeSandbox) seen() (keys, closed []string) {
+func (f *fakeSandbox) seen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]string(nil), f.keys...), append([]string(nil), f.closed...)
+	return append([]string(nil), f.closed...)
 }

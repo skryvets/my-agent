@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/conversation"
 )
 
 func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
@@ -151,11 +152,9 @@ func TestServeNamesAndThrowsAwayTheWorkspace(t *testing.T) {
 	fake := newFakeTelegram(t)
 	box := &fakeSandbox{}
 	var keyed string
-	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
-		return agent.Message{Content: "answer"}, nil
-	})
+	bot := newTestBot(fake, nil)
 	bot.sandbox = box
-	bot.agent = keyReadingAgent{key: &keyed, box: box}
+	bot.agent = keyReadingAgent{key: &keyed}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -163,20 +162,18 @@ func TestServeNamesAndThrowsAwayTheWorkspace(t *testing.T) {
 	bot.dispatch(ctx, textUpdate(1, 42, 99, "hello"))
 	fake.nextSent(t)
 
-	keys, closed := box.seen()
-	if len(keys) != 1 || keys[0] != "99" {
-		t.Errorf("keys = %#v, want the chat id", keys)
-	}
-	if len(closed) != 0 {
-		t.Errorf("the workspace was closed too early: %#v", closed)
-	}
+	// Every call of the chat carries the chat, so the tools and the
+	// questions they raise find their way back to it.
 	if keyed != "99" {
 		t.Errorf("the chat did not reach the agent through the context: %q", keyed)
+	}
+	if closed := box.seen(); len(closed) != 0 {
+		t.Errorf("the workspace was closed too early: %#v", closed)
 	}
 
 	bot.dispatch(ctx, textUpdate(2, 42, 99, "/reset"))
 	fake.nextSent(t)
-	if _, closed := box.seen(); len(closed) != 1 || closed[0] != "99" {
+	if closed := box.seen(); len(closed) != 1 || closed[0] != "99" {
 		t.Errorf("closed = %#v, want the chat id", closed)
 	}
 
@@ -203,15 +200,14 @@ func TestServeReportsAWorkspaceThatWillNotClose(t *testing.T) {
 	}
 }
 
-// keyReadingAgent reports the chat key the bot put into the context.
+// keyReadingAgent reports the chat the bot named in the context.
 type keyReadingAgent struct {
 	key *string
-	box *fakeSandbox
 }
 
 func (k keyReadingAgent) Model() string { return "test-model" }
 
 func (k keyReadingAgent) Chat(ctx context.Context, _ agent.History, _ io.Writer) (agent.Message, error) {
-	*k.key, _ = ctx.Value(k.box).(string)
+	*k.key = conversation.KeyOf(ctx)
 	return agent.Message{Content: "answer"}, nil
 }

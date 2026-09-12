@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/skryvets/my-agent/internal/conversation"
 )
 
 const (
@@ -111,7 +113,7 @@ func (p *Pool) Shutdown(ctx context.Context) {
 // time. The lock is held across the start, which is fast because New already
 // pulled the image.
 func (p *Pool) container(ctx context.Context) (*Container, error) {
-	key := keyOf(ctx)
+	key := conversation.KeyOf(ctx)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
