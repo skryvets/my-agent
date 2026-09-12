@@ -131,3 +131,31 @@ func textUpdate(id, userID, chatID int64, text string) update {
 	msg.Chat.Type = "private"
 	return update{UpdateID: id, Message: msg}
 }
+
+// fakeSandbox records the chat keys the bot named and closed.
+type fakeSandbox struct {
+	mu     sync.Mutex
+	keys   []string
+	closed []string
+	err    error
+}
+
+func (f *fakeSandbox) WithKey(ctx context.Context, key string) context.Context {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys = append(f.keys, key)
+	return context.WithValue(ctx, f, key)
+}
+
+func (f *fakeSandbox) Close(ctx context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = append(f.closed, key)
+	return f.err
+}
+
+func (f *fakeSandbox) seen() (keys, closed []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.keys...), append([]string(nil), f.closed...)
+}

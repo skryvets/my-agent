@@ -3,18 +3,12 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
-// ReadFile returns the text of one file under Dir.
+// ReadFile returns the text of one file in the workspace.
 type ReadFile struct {
-	// Dir is the root the paths are resolved against. An empty Dir means the
-	// current directory.
-	Dir string
+	Workspace Workspace
 }
 
 func (r ReadFile) Name() string { return "read_file" }
@@ -30,22 +24,16 @@ func (r ReadFile) Call(ctx context.Context, args json.RawMessage) (string, error
 	if err := decode(args, &in); err != nil {
 		return "", err
 	}
-	path, err := resolve(r.Dir, in.Path)
+	content, err := r.Workspace.ReadFile(ctx, in.Path)
 	if err != nil {
 		return "", err
 	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return truncate(string(content)), nil
+	return truncate(content), nil
 }
 
-// WriteFile replaces the content of one file under Dir.
+// WriteFile replaces the content of one file in the workspace.
 type WriteFile struct {
-	// Dir is the root the paths are resolved against. An empty Dir means the
-	// current directory.
-	Dir string
+	Workspace Workspace
 }
 
 func (w WriteFile) Name() string { return "write_file" }
@@ -62,14 +50,7 @@ func (w WriteFile) Call(ctx context.Context, args json.RawMessage) (string, erro
 	if err := decode(args, &in); err != nil {
 		return "", err
 	}
-	path, err := resolve(w.Dir, in.Path)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
+	if err := w.Workspace.WriteFile(ctx, in.Path, in.Content); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("wrote %d bytes to %s", len(in.Content), in.Path), nil
@@ -93,24 +74,4 @@ func pathSchema(pathDescription string, withContent bool) map[string]any {
 		required = append(required, "content")
 	}
 	return map[string]any{"type": "object", "properties": properties, "required": required}
-}
-
-// resolve keeps a path inside the root, so a model that asks for ../../etc
-// gets an error instead of the file.
-func resolve(dir, name string) (string, error) {
-	if name == "" {
-		return "", errors.New("path is empty")
-	}
-	root, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(root, name)
-	if filepath.IsAbs(name) {
-		path = filepath.Clean(name)
-	}
-	if path != root && !strings.HasPrefix(path, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q is outside the working directory", name)
-	}
-	return path, nil
 }

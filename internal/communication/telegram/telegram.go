@@ -25,9 +25,26 @@ type Agent interface {
 	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
 }
 
+// Sandbox is the throwaway workspace the tools of one chat work in.
+// *sandbox.Pool satisfies it. A bot without one runs its tools on the host.
+type Sandbox interface {
+	// WithKey names the chat whose workspace a call belongs to.
+	WithKey(ctx context.Context, key string) context.Context
+	// Close throws the workspace of one chat away.
+	Close(ctx context.Context, key string) error
+}
+
+// An Option changes the bot before it starts polling.
+type Option func(*Bot)
+
+// WithSandbox gives each chat its own workspace, which /reset throws away.
+func WithSandbox(box Sandbox) Option {
+	return func(b *Bot) { b.sandbox = box }
+}
+
 // Run reads the bot configuration from the environment and serves until ctx is
 // cancelled.
-func Run(ctx context.Context, model Agent) error {
+func Run(ctx context.Context, model Agent, options ...Option) error {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		return errors.New("TELEGRAM_BOT_TOKEN is not set")
@@ -46,6 +63,9 @@ func Run(ctx context.Context, model Agent) error {
 		allowed:   allowed,
 		retryBase: time.Second,
 		sessions:  map[int64]chan string{},
+	}
+	for _, option := range options {
+		option(bot)
 	}
 	if err := bot.run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err

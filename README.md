@@ -2,11 +2,12 @@
 
 A small agent that talks to a model through the [OpenRouter](https://openrouter.ai) chat completions API, runs the tools the model asks for, and streams the answer as it arrives.
 
-It shows three things that are easy to get wrong:
+It shows four things that are easy to get wrong:
 
 - server-sent events parsing, including OpenRouter keep-alive comment lines
 - reassembling streamed `tool_calls` fragments, which arrive indexed and split across chunks, and running a round of them before asking the model again
 - reassembling streamed `reasoning_details` fragments so the model's thinking can be replayed in a follow-up turn, kept for when reasoning is switched on
+- driving the Docker Engine API over its unix socket with nothing but `net/http`, so each conversation works in a container of its own
 
 It runs in the terminal, or as a Telegram bot.
 
@@ -29,7 +30,12 @@ flowchart LR
         sh["shell, read_file<br/>write_file, fetch"]
     end
 
+    subgraph box ["internal/sandbox"]
+        pool["Pool<br/>one container per chat"]
+    end
+
     api(["OpenRouter<br/>chat completions"])
+    dock(["Docker Engine<br/>unix socket"])
 
     main -->|default| term
     main -->|"-telegram"| tg
@@ -41,6 +47,8 @@ flowchart LR
     sse --> chat
     chat -->|tool_calls| reg
     reg --> sh
+    sh -->|Workspace| pool
+    pool --> dock
     sh -->|results| chat
 ```
 
@@ -82,8 +90,8 @@ The model does not only answer, it can act. Four tools ship today:
 | `write_file` | replaces the content of a file and creates the parent directories |
 | `fetch` | gets a URL and returns the status and the body |
 
-`-workdir` says where the first three of them work. It is the current directory
-by default:
+`-workdir` says where the first three of them work on the host. It is the
+current directory by default:
 
 ```sh
 go run . -workdir ~/Code/some-project
@@ -100,8 +108,49 @@ exits non-zero is an answer the model can read and work around, not a broken
 turn. Output is cut to the last 8000 bytes, because the whole result goes back
 into the history on every later turn.
 
-> The tools run on the machine the agent runs on. The sandbox that gives each
-> chat its own container comes next.
+A tool never touches the host directly. It works through a `Workspace`, which
+is the host in a terminal chat and a container with `-sandbox`. A tool cannot
+tell the two apart.
+
+## Sandbox
+
+`-sandbox` gives every conversation its own Docker container and runs the tools
+inside it:
+
+```sh
+go run . -sandbox
+go run . -sandbox -image node:20
+```
+
+The container starts from `golang:1.26`, works in `/work` and has
+**no network of its own**: `NetworkMode` is `none`, so a command inside it
+cannot reach the internet, the host, or another container. A command that
+leaves a mess leaves it in a container that is thrown away.
+
+| When | What happens |
+| --- | --- |
+| the first tool call of a chat | a container starts for that chat alone |
+| `/reset` | the container is removed with everything written in it |
+| 30 minutes without a command | a reaper removes it |
+| the agent stops | every container it started is removed |
+| the agent starts | the containers of an earlier run are removed |
+
+The last line matters on Railway, where a restart would otherwise leave one
+container for every chat that was open.
+
+Which conversation a call belongs to travels in the context, so one shared
+agent serves every chat and each one still gets its own container. A connector
+names the conversation through a small interface it declares, and never imports
+the sandbox.
+
+`internal/sandbox` speaks the Docker Engine API itself, over the unix socket,
+with `net/http` and its own `DialContext`. That is what keeps `go.mod` free of
+requirements. Four calls do the work: create and start a container, create and
+start an exec, and put or get a tar through the archive endpoint, because the
+API has no endpoint that takes a plain file.
+
+> `fetch` is the one tool that stays outside the sandbox: it runs in the agent
+> process, so it still reaches the network. Gating it is the next stage.
 
 ## Telegram bot
 
@@ -117,7 +166,7 @@ go run . -telegram
 The bot long-polls `getUpdates` for `message` updates, keeps one conversation per chat, and answers each message with the model. Commands:
 
 - `/start`, `/help` - what the bot does
-- `/reset` - forget the conversation in that chat
+- `/reset` - forget the conversation in that chat, and throw away its container
 
 Details worth knowing:
 
@@ -145,6 +194,11 @@ The bot has no HTTP server, so it is a worker service: no port, no healthcheck. 
 Set `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USERS` as service variables. The same command can be typed into Settings -> Deploy -> Custom Start Command instead, but the checked-in file survives a service being recreated.
 
 Only one instance may poll `getUpdates` at a time, so keep the service at a single replica.
+
+Railway gives a worker service no Docker socket, so `-sandbox` does not work
+there. The deployed bot runs its tools inside its own Railway container, which
+is isolation of a kind, but one container for every chat instead of one for
+each. Run the bot on a machine with Docker to get the real thing.
 
 ## Configuration
 
@@ -207,6 +261,7 @@ never poisons the history.
 main.go                              flag parsing and wiring
 internal/agent/                      the model: OpenRouter client, SSE stream, tool loop, history
 internal/tools/                      what the agent can do: shell, files, fetch
+internal/sandbox/                    a Docker container for each conversation
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
 ```

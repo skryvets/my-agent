@@ -17,9 +17,19 @@ internal/agent/                      the model
   reasoning.go                       reassembling streamed reasoning_details
   history.go                         a conversation in the API's wire format
 internal/tools/                      what the agent can do
+  workspace.go                       the Workspace interface and the host
   shell.go                           run a command
   file.go                            read a file, write a file
   fetch.go                           get a URL
+internal/sandbox/                    one container for each conversation
+  docker.go                          the Engine API over the unix socket
+  container.go                       exec in one container
+  archive.go                         a file in and out as a tar
+  pool.go                            find or start the container of a chat
+  workspace.go                       the Workspace the tools see
+  reaper.go                          throw away what went quiet
+  image.go                           pull, start, clear an earlier run
+  key.go                             which conversation a call belongs to
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
   telegram.go                        Run, configuration from the environment
@@ -46,6 +56,16 @@ internal/communication/telegram/     Telegram bot connector
   is a new file there plus a line in `main.go` - `internal/agent` stays a loop
   that knows no tool by name. A tool reports a failure as text for the model,
   and returns an error only when the call itself was malformed
+- a tool never touches the host directly. It works through `tools.Workspace`,
+  which is `tools.Host` in a terminal chat and `*sandbox.Pool` with `-sandbox`.
+  A tool must not be able to tell the two apart
+- `internal/sandbox` speaks the Docker Engine API over the unix socket with
+  `net/http` and its own `DialContext`. That is what keeps `go.mod` empty of
+  requirements, so do not reach for the Docker SDK. The API version is pinned
+  in `docker.go`
+- which conversation a call belongs to travels in the context, not in an
+  argument. A connector names it with `WithKey` through the interface it
+  declares, so `internal/communication` never imports `internal/sandbox`
 - a failed turn is reported and dropped, never fatal. Only `main.go` calls
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
