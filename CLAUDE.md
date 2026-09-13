@@ -50,6 +50,7 @@ internal/communication/telegram/     Telegram bot connector
   client.go                          Bot API transport
   types.go                           Bot API wire types
   text.go                            splitting an answer to fit a message
+docs/architecture.html               a three.js drawing of the whole system
 ```
 
 ## Rules
@@ -101,6 +102,11 @@ internal/communication/telegram/     Telegram bot connector
   dead code, and do not enable reasoning without being asked
 - the README carries two mermaid diagrams, one of the package structure and one
   of a single turn. Changing either shape means updating them
+- `docs/architecture.html` draws the same two shapes in three.js, with a step
+  for each stage of a turn and of a task. It is one standalone file with no
+  build step, and it loads three.js from a CDN. Moving a package or renaming a
+  stage means updating the `NODES`, `WIRES` and `CHAPTERS` tables at the top of
+  its script
 
 ## Testing
 

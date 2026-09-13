@@ -1,0 +1,1369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Pocket Agent Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;450;600&display=swap">
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper:       #DFE6EC;
+    --sheet:       #F3F6F8;
+    --sheet-2:     #E7EDF2;
+    --ink:         #0D2136;
+    --ink-soft:    #4C6579;
+    --ink-faint:   #7B93A6;
+    --rule:        #B3C4D1;
+    --rule-strong: #8AA3B6;
+    --accent:      #0A6B9C;
+    --signal:      #B85C12;
+    --gate:        #8A6200;
+    --seal:        #16705A;
+    --alert:       #9E2F2B;
+    --stage-sky:   #C9D8E4;
+    --stage-floor: #DCE6EE;
+
+    --f-display: "Saira Condensed", "Arial Narrow", sans-serif;
+    --f-body: "IBM Plex Sans", system-ui, sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+    --gutter: 20px;
+    --radius: 3px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:       #061625;
+      --sheet:       #0B2135;
+      --sheet-2:     #10293F;
+      --ink:         #DDE9F3;
+      --ink-soft:    #93ACC0;
+      --ink-faint:   #667F94;
+      --rule:        #1D3B55;
+      --rule-strong: #2E5A7C;
+      --accent:      #58B8EC;
+      --signal:      #F0A75E;
+      --gate:        #E7C25C;
+      --seal:        #5DCCA6;
+      --alert:       #EE837A;
+      --stage-sky:   #04121F;
+      --stage-floor: #071C2D;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:       #061625;
+    --sheet:       #0B2135;
+    --sheet-2:     #10293F;
+    --ink:         #DDE9F3;
+    --ink-soft:    #93ACC0;
+    --ink-faint:   #667F94;
+    --rule:        #1D3B55;
+    --rule-strong: #2E5A7C;
+    --accent:      #58B8EC;
+    --signal:      #F0A75E;
+    --gate:        #E7C25C;
+    --seal:        #5DCCA6;
+    --alert:       #EE837A;
+    --stage-sky:   #04121F;
+    --stage-floor: #071C2D;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding-inline: var(--gutter);
+    padding-block: 28px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  /* ---------- title block ---------- */
+
+  .titleblock {
+    border: 1px solid var(--rule-strong);
+    background: var(--sheet);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0;
+  }
+
+  .titleblock__main { padding: 18px 22px 16px; min-width: 0; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 6px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(30px, 6vw, 52px);
+    line-height: .96;
+    letter-spacing: .01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 .thin { font-weight: 500; color: var(--ink-soft); }
+
+  .standfirst {
+    margin: 10px 0 0;
+    max-width: 60ch;
+    color: var(--ink-soft);
+    font-size: 15px;
+  }
+
+  .titleblock__meta {
+    border-left: 1px solid var(--rule);
+    display: grid;
+    grid-template-rows: repeat(3, auto);
+    align-content: start;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    min-width: 190px;
+  }
+
+  .metarow {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .metarow:last-child { border-bottom: 0; }
+  .metarow span:first-child { color: var(--ink-faint); letter-spacing: .08em; text-transform: uppercase; }
+  .metarow span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* ---------- stage ---------- */
+
+  .board {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+
+  .stage {
+    position: relative;
+    border: 1px solid var(--rule-strong);
+    background: var(--stage-sky);
+    min-height: 440px;
+    height: clamp(440px, 64vh, 660px);
+    overflow: hidden;
+  }
+
+  #scene { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #scene:active { cursor: grabbing; }
+
+  .stage__corner {
+    position: absolute;
+    top: 10px; left: 12px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    pointer-events: none;
+  }
+
+  .legend {
+    position: absolute;
+    right: 12px; top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    pointer-events: none;
+    text-align: right;
+  }
+  .legend div { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .swatch { width: 20px; height: 3px; flex: none; }
+  .swatch.dash { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px); height: 3px; }
+
+  .hint {
+    position: absolute;
+    left: 12px; bottom: 10px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    pointer-events: none;
+  }
+
+  /* ---------- panel ---------- */
+
+  .panel {
+    border: 1px solid var(--rule-strong);
+    background: var(--sheet);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .chapters { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--rule-strong); }
+
+  .chapter {
+    appearance: none;
+    border: 0;
+    border-right: 1px solid var(--rule);
+    background: var(--sheet-2);
+    color: var(--ink-soft);
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: .02em;
+    padding: 11px 12px 9px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .chapter:last-child { border-right: 0; }
+  .chapter small { display: block; font-family: var(--f-mono); font-weight: 400; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+  .chapter[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: inset 0 3px 0 var(--accent); }
+  .chapter:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .stepbody { padding: 18px 20px 4px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+  .stepno {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    color: var(--signal);
+    margin: 0 0 6px;
+  }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(22px, 3.4vw, 29px);
+    line-height: 1.06;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+
+  .stepbody p { margin: 0 0 12px; max-width: 46ch; }
+
+  .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .file {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
+    background: var(--sheet-2);
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+
+  .say {
+    border-left: 3px solid var(--accent);
+    padding: 2px 0 2px 13px;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .say strong {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    margin-bottom: 3px;
+  }
+
+  .transport {
+    border-top: 1px solid var(--rule-strong);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--sheet-2);
+  }
+
+  .btn {
+    appearance: none;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--sheet);
+    border: 1px solid var(--rule-strong);
+    padding: 6px 11px;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn[disabled] { opacity: .4; cursor: default; }
+  .btn--play { min-width: 92px; }
+
+  .ticks { display: flex; gap: 4px; margin-left: auto; }
+  .tick {
+    appearance: none;
+    width: 15px; height: 15px;
+    padding: 0;
+    border: 1px solid var(--rule-strong);
+    background: transparent;
+    cursor: pointer;
+    font-size: 0;
+  }
+  .tick[aria-current="true"] { background: var(--signal); border-color: var(--signal); }
+  .tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---------- lower sections ---------- */
+
+  section h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 26px;
+    margin: 0 0 4px;
+    letter-spacing: .01em;
+  }
+  section .lede { margin: 0 0 16px; color: var(--ink-soft); max-width: 62ch; }
+
+  .maplist { border-top: 1px solid var(--rule-strong); }
+  .maprow {
+    display: grid;
+    grid-template-columns: minmax(150px, 200px) minmax(0, 1fr) minmax(140px, 210px);
+    gap: 18px;
+    padding: 11px 2px;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .maprow dt {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: .01em;
+  }
+  .maprow dd { margin: 0; color: var(--ink-soft); }
+  .maprow .where { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-faint); }
+
+  .qa { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .qa > div { background: var(--sheet); padding: 15px 17px 17px; }
+  .qa h4 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 19px;
+    margin: 0 0 7px;
+    color: var(--accent);
+    text-wrap: balance;
+  }
+  .qa p { margin: 0; color: var(--ink-soft); font-size: 14.5px; }
+
+  .footnote {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--rule);
+    padding-top: 12px;
+    margin: 0;
+  }
+
+  @media (max-width: 900px) {
+    .board { grid-template-columns: minmax(0, 1fr); }
+    .stage { height: clamp(320px, 52vh, 460px); min-height: 320px; }
+    .titleblock { grid-template-columns: minmax(0, 1fr); }
+    .titleblock__meta { border-left: 0; border-top: 1px solid var(--rule); grid-template-columns: repeat(3, 1fr); grid-template-rows: auto; min-width: 0; }
+    .metarow { border-bottom: 0; border-right: 1px solid var(--rule); flex-direction: column; gap: 2px; }
+    .metarow:last-child { border-right: 0; }
+    .maprow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .legend { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto; }
+  }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="titleblock">
+    <div class="titleblock__main">
+      <p class="eyebrow">Drawing 01 &middot; one message from a phone becomes a pull request</p>
+      <h1>my-agent<span class="thin"> / pocket coding agent</span></h1>
+      <p class="standfirst">
+        A Telegram bot that clones a repository, edits it inside a sealed container, runs the tests
+        and opens the pull request. Turn the drawing. Walk a run one step at a time.
+        Every step names the file that does the work.
+      </p>
+    </div>
+    <div class="titleblock__meta">
+      <div class="metarow"><span>Language</span><span>Go 1.26</span></div>
+      <div class="metarow"><span>Dependencies</span><span>0</span></div>
+      <div class="metarow"><span>Sandbox</span><span>network none</span></div>
+    </div>
+  </header>
+
+  <div class="board">
+    <div class="stage">
+      <canvas id="scene"></canvas>
+      <div class="stage__corner">Isometric &middot; not to scale</div>
+      <div class="legend" id="legend">
+        <div><span>a network hop</span><span class="swatch dash" style="color: var(--accent)"></span></div>
+        <div><span>inside one process</span><span class="swatch" style="background: var(--accent)"></span></div>
+        <div><span>socket and bind mount</span><span class="swatch" style="background: var(--seal)"></span></div>
+      </div>
+      <div class="hint">Drag to turn &middot; scroll to zoom</div>
+    </div>
+
+    <div class="panel">
+      <div class="chapters" role="tablist" aria-label="Which run to follow">
+        <button class="chapter" role="tab" id="tab-turn" aria-selected="true" aria-controls="steppanel">
+          <small>Chapter 1</small>One turn
+        </button>
+        <button class="chapter" role="tab" id="tab-task" aria-selected="false" aria-controls="steppanel">
+          <small>Chapter 2</small>One task
+        </button>
+      </div>
+
+      <div class="stepbody" id="steppanel" role="tabpanel" aria-labelledby="tab-turn">
+        <p class="stepno" id="stepno">Step 1 of 8</p>
+        <h2 id="steptitle">The message arrives</h2>
+        <p id="stepbody">Loading the drawing.</p>
+        <div class="files" id="stepfiles"></div>
+        <div class="say"><strong>Say this out loud</strong><span id="stepsay"></span></div>
+      </div>
+
+      <div class="transport">
+        <button class="btn" id="prev" type="button">&larr; Back</button>
+        <button class="btn" id="next" type="button">Next &rarr;</button>
+        <button class="btn btn--play" id="play" type="button">Play run</button>
+        <div class="ticks" id="ticks"></div>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <h3>What the drawing proves</h3>
+    <p class="lede">Each line of the job posting has one place in the repository that answers it.</p>
+    <dl class="maplist" id="maplist"></dl>
+  </section>
+
+  <section>
+    <h3>If they ask</h3>
+    <p class="lede">Five questions the drawing sets up, and the answer that keeps the story short.</p>
+    <div class="qa" id="qa"></div>
+  </section>
+
+  <p class="footnote">
+    Four commits: 9df05ae tool loop &middot; 060a605 sandbox &middot; 3e12e70 approval &middot; 207fd43 task to pull request.
+    go.mod still has no require block.
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------ *
+   * The drawing: nodes, wires, and the two runs that travel them.
+   * ------------------------------------------------------------------ */
+
+  var ZONE = { OUT: "out", PROC: "proc", BOX: "box" };
+
+  var NODES = {
+    phone:    { pos: [-15,  3.0,  6], size: [2.2, 4.0, 0.5], zone: ZONE.OUT,  label: "phone / Telegram",    sub: "getUpdates" },
+    model:    { pos: [ -5,  8.6,-13], size: [5.4, 1.6, 3.0], zone: ZONE.OUT,  label: "OpenRouter",          sub: "chat completions" },
+    hub:      { pos: [ 14,  8.6,-12], size: [4.6, 1.6, 3.0], zone: ZONE.OUT,  label: "GitHub REST",         sub: "pulls" },
+
+    session:  { pos: [-10,  1.2,  3], size: [4.0, 1.3, 2.4], zone: ZONE.PROC, label: "session",             sub: "one goroutine per chat" },
+    loop:     { pos: [ -3,  1.2, -1], size: [4.4, 1.6, 2.6], zone: ZONE.PROC, label: "tool loop",           sub: "agent.Chat" },
+    registry: { pos: [2.5,  1.2,  3], size: [4.0, 1.3, 2.4], zone: ZONE.PROC, label: "tool registry",       sub: "shell read write fetch" },
+    gate:     { pos: [1.5,  1.2, -6], size: [3.8, 1.3, 2.4], zone: ZONE.PROC, label: "approval gate",       sub: "allowlist" },
+    task:     { pos: [9.5,  1.2,  4], size: [3.8, 1.3, 2.4], zone: ZONE.PROC, label: "task runner",         sub: "/task" },
+    git:      { pos: [ 12,  1.2, -2], size: [3.8, 1.3, 2.4], zone: ZONE.PROC, label: "git + token",         sub: "on the host only" },
+    disk:     { pos: [ 15,  1.0,  6], size: [2.6, 0.9, 2.6], zone: ZONE.PROC, label: "run store",           sub: "one JSON per run" },
+
+    box:      { pos: [  2,  3.0, 12], size: [8.0, 5.0, 6.0], zone: ZONE.BOX,  label: "container", sub: "--network none" }
+  };
+
+  var WIRES = [
+    ["phone", "session"], ["session", "loop"], ["loop", "model"],
+    ["loop", "registry"], ["registry", "gate"], ["gate", "phone"],
+    ["registry", "box"], ["loop", "box"],
+    ["phone", "task"], ["task", "loop"], ["task", "git"], ["git", "hub"],
+    ["git", "box"], ["task", "disk"]
+  ];
+
+  var CHAPTERS = {
+    turn: {
+      name: "One turn",
+      steps: [
+        {
+          title: "The message arrives",
+          body: "The bot holds one getUpdates call open for thirty seconds. Each chat gets one goroutine and one ordered queue, so two messages in the same chat never run together.",
+          files: ["telegram/bot.go", "telegram/session.go"],
+          say: "One goroutine for each chat keeps the order. A full queue answers 'still working' instead of dropping the message.",
+          path: [["phone", "session"]],
+          focus: ["phone", "session"]
+        },
+        {
+          title: "The turn goes to the model",
+          body: "The history and the JSON schema of every tool go out in one request. The answer comes back as server-sent events, and a hand-written parser reads the frames.",
+          files: ["agent/agent.go", "agent/stream.go"],
+          say: "There is no SDK here. I wrote the SSE parser, so I can show you where a frame ends.",
+          path: [["session", "loop"], ["loop", "model"]],
+          focus: ["loop", "model"]
+        },
+        {
+          title: "The model asks for tools",
+          body: "A streamed tool call does not arrive whole. It arrives as fragments that carry an index, and the loop joins the fragments by index before it runs anything.",
+          files: ["agent/toolcall.go", "agent/loop.go"],
+          say: "This is the part people get wrong. An empty string in a later fragment must not erase the id that came in the first one.",
+          path: [["loop", "model"]],
+          reverse: true,
+          focus: ["loop"]
+        },
+        {
+          title: "The policy reads the call",
+          body: "An allowlist names the tools and the programs that may run with nobody watching. The gate splits a command line on every separator and checks each part on its own.",
+          files: ["approval/policy.go", "approval/guard.go"],
+          say: "A command substitution is refused outright. An allowed program at the front says nothing about what follows the semicolon.",
+          path: [["loop", "registry"], ["registry", "gate"]],
+          focus: ["registry", "gate"]
+        },
+        {
+          title: "A person answers",
+          body: "A call the policy does not name goes to the chat as two buttons. The tool call blocks on the press. Five minutes of silence counts as a refusal.",
+          files: ["telegram/approval.go", "approval/approval.go"],
+          say: "An agent firewall in miniature. A refusal goes back to the model as text, so it tries another way instead of asking twice.",
+          path: [["gate", "phone"], ["gate", "phone"]],
+          pingpong: true,
+          focus: ["gate", "phone"]
+        },
+        {
+          title: "The call runs in the container",
+          body: "A tool never touches the host. It holds a Workspace, and with the sandbox on, that Workspace is the container of this chat. The tool cannot tell the two apart.",
+          files: ["sandbox/pool.go", "sandbox/container.go"],
+          say: "The Docker Engine API runs over the unix socket with net/http and a custom DialContext. That is how go.mod stays empty.",
+          path: [["registry", "box"]],
+          focus: ["box", "registry"]
+        },
+        {
+          title: "The results go back",
+          body: "Independent calls run together behind a WaitGroup and a semaphore of four. The results join the history in order, and the loop asks the model again.",
+          files: ["agent/tool.go", "agent/history.go"],
+          say: "The loop ends on a final answer or after ten rounds. A model that keeps asking for tools cannot run forever.",
+          path: [["registry", "box"], ["loop", "registry"], ["loop", "model"]],
+          reverseFirst: true,
+          focus: ["loop", "registry"]
+        },
+        {
+          title: "The answer reaches the phone",
+          body: "The text streams out while it arrives, and a long answer splits at the message limit. The tool turns travel back with the answer, so the connector keeps the whole round.",
+          files: ["telegram/text.go", "agent/history.go"],
+          say: "The connector never builds a tool message itself. It only calls WithAssistant, and the steps come back with it.",
+          path: [["session", "loop"], ["phone", "session"]],
+          reverse: true,
+          focus: ["session", "phone"]
+        }
+      ]
+    },
+
+    task: {
+      name: "One task",
+      steps: [
+        {
+          title: "/task skryvets/my-agent fix the lint warning",
+          body: "The command starts a run with its own id and its own branch, and answers at once. The work itself takes minutes, so every stage reports back to the chat.",
+          files: ["telegram/task.go", "task/task.go"],
+          say: "A silent agent for three minutes looks broken. Progress lines cost nothing and buy patience.",
+          path: [["phone", "task"]],
+          focus: ["phone", "task"]
+        },
+        {
+          title: "The host clones",
+          body: "git runs in the agent process, where the token is. The clone address carries the token, so every error passes through one function that replaces it before a chat sees it.",
+          files: ["task/git.go"],
+          say: "The token never reaches the model and never reaches the container. Two outbound steps stay in code I wrote.",
+          path: [["task", "git"], ["git", "hub"]],
+          focus: ["git", "hub"]
+        },
+        {
+          title: "The checkout is lent to the container",
+          body: "The container starts with the checkout bound at /work. The container has no network at all, so it could not clone even if the model asked it to.",
+          files: ["sandbox/pool.go", "task/work.go"],
+          say: "The brief said clone inside the sandbox. A sandbox with no network cannot clone, so I moved git out and lent the files in.",
+          path: [["git", "box"]],
+          focus: ["box", "git"]
+        },
+        {
+          title: "The model works inside",
+          body: "The model reads, edits and runs commands in /work through the same four tools as a chat. It is told not to run git, because the branch and the commit are made for it.",
+          files: ["task/work.go", "agent/loop.go"],
+          say: "Same tool loop as chapter one. The task adds no new agent code, only new stages around it.",
+          path: [["task", "loop"], ["loop", "box"]],
+          focus: ["loop", "box"]
+        },
+        {
+          title: "The tests run",
+          body: "The model runs the tests of the project inside the container before it finishes. A run that changed nothing ends there and says so.",
+          files: ["tools/shell.go", "task/work.go"],
+          say: "go test -race runs on the same checkout that becomes the pull request. Nothing is tested on the host.",
+          path: [["registry", "box"]],
+          focus: ["box"]
+        },
+        {
+          title: "The model names its change",
+          body: "A second request, with no tools attached, asks for one commit subject. Asking in the same turn buries the subject in prose.",
+          files: ["task/work.go"],
+          say: "That split cut a run from 130 seconds to 27, and gave the pull request a title a human would write.",
+          path: [["loop", "model"]],
+          focus: ["loop", "model"]
+        },
+        {
+          title: "The host commits and pushes",
+          body: "The commit subject is the model's line and the body is the instruction. The push goes out over the same address that carried the clone.",
+          files: ["task/git.go"],
+          say: "The container is already closed by now. The branch leaves from the host, not from the sandbox.",
+          path: [["git", "hub"]],
+          focus: ["git", "hub"]
+        },
+        {
+          title: "The pull request opens",
+          body: "One POST to the pulls endpoint, with the API version header. The reply carries the browser address, and the chat gets it.",
+          files: ["task/github.go"],
+          say: "This is the whole demo. One message from the phone, one link back, and the work is on a branch for review.",
+          path: [["git", "hub"], ["task", "git"], ["phone", "task"]],
+          reverseAll: true,
+          focus: ["phone", "hub"]
+        },
+        {
+          title: "The run is on disk",
+          body: "Each state change writes one JSON file. On start, the runner reads the runs that never ended and tells each chat which one a restart caught.",
+          files: ["task/store.go", "task/task.go"],
+          say: "Railway restarts a worker whenever it likes. A run that vanishes without a word is worse than one that failed.",
+          path: [["task", "disk"]],
+          focus: ["task", "disk"]
+        }
+      ]
+    }
+  };
+
+  var MAP = [
+    ["Agent execution", "A loop that runs the calls the model asks for, appends the results and asks again, with a cap of ten rounds.", "internal/agent/loop.go"],
+    ["Tool use", "A Tool interface, a registry, and independent calls run together behind a semaphore of four.", "internal/agent/tool.go"],
+    ["Context management", "Trim drops forward to the next user turn, so a shortened history never starts on an orphan tool result.", "internal/agent/history.go"],
+    ["Streaming", "A hand-written server-sent events parser, and fragments of a tool call joined by index.", "internal/agent/stream.go"],
+    ["Long-running workflows", "A run reports each stage to the chat and survives a restart of the process.", "internal/task/"],
+    ["Remote and isolated compute", "One container for each chat over the Docker Engine API, with no network and an idle reaper.", "internal/sandbox/"],
+    ["Human in the loop", "An allowlist for the ordinary calls, and two buttons in the chat for everything else.", "internal/approval/"]
+  ];
+
+  var QA = [
+    ["Why no dependencies?", "Because the interesting code is the part a library hides: the event frames, the tool call fragments, the Engine API calls. go.mod has no require block, and every package is above ninety percent covered."],
+    ["How does one agent serve many chats?", "The chat key travels in the context. The container pool and the approval broker both read it there, so a tool stays unaware that Telegram exists."],
+    ["What stops a tool from reaching the host?", "A tool only holds a Workspace interface. In a terminal chat that is a host directory; with the sandbox on it is the container. The tool cannot tell which one it has."],
+    ["What happens on a restart?", "The store holds every run. On start the runner reads the ones that never ended, marks them, and tells each chat what it lost."],
+    ["What would you build next?", "A second sandbox behind the same Workspace interface, on a remote worker instead of the local daemon, and a policy for each repository instead of one global allowlist."]
+  ];
+
+  /* ------------------------------------------------------------------ *
+   * Panel
+   * ------------------------------------------------------------------ */
+
+  var maplist = document.getElementById("maplist");
+  MAP.forEach(function (row) {
+    var div = document.createElement("div");
+    div.className = "maprow";
+    var dt = document.createElement("dt");
+    dt.textContent = row[0];
+    var dd = document.createElement("dd");
+    dd.textContent = row[1];
+    var where = document.createElement("dd");
+    where.className = "where";
+    where.textContent = row[2];
+    div.appendChild(dt); div.appendChild(dd); div.appendChild(where);
+    maplist.appendChild(div);
+  });
+
+  var qa = document.getElementById("qa");
+  QA.forEach(function (row) {
+    var cell = document.createElement("div");
+    var h = document.createElement("h4");
+    h.textContent = row[0];
+    var p = document.createElement("p");
+    p.textContent = row[1];
+    cell.appendChild(h); cell.appendChild(p);
+    qa.appendChild(cell);
+  });
+
+  var el = {
+    no: document.getElementById("stepno"),
+    title: document.getElementById("steptitle"),
+    body: document.getElementById("stepbody"),
+    files: document.getElementById("stepfiles"),
+    say: document.getElementById("stepsay"),
+    ticks: document.getElementById("ticks"),
+    prev: document.getElementById("prev"),
+    next: document.getElementById("next"),
+    play: document.getElementById("play"),
+    panel: document.getElementById("steppanel"),
+    tabTurn: document.getElementById("tab-turn"),
+    tabTask: document.getElementById("tab-task")
+  };
+
+  var chapter = "turn";
+  var index = 0;
+  var playing = false;
+  var playTimer = null;
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function steps() { return CHAPTERS[chapter].steps; }
+
+  function buildTicks() {
+    el.ticks.innerHTML = "";
+    steps().forEach(function (step, i) {
+      var b = document.createElement("button");
+      b.className = "tick";
+      b.type = "button";
+      b.textContent = String(i + 1);
+      b.setAttribute("aria-label", "Step " + (i + 1) + ": " + step.title);
+      b.addEventListener("click", function () { stopPlay(); go(i); });
+      el.ticks.appendChild(b);
+    });
+  }
+
+  function render() {
+    var list = steps();
+    var step = list[index];
+    el.no.textContent = "Step " + (index + 1) + " of " + list.length;
+    el.title.textContent = step.title;
+    el.body.textContent = step.body;
+    el.say.textContent = step.say;
+    el.files.innerHTML = "";
+    step.files.forEach(function (f) {
+      var s = document.createElement("span");
+      s.className = "file";
+      s.textContent = f;
+      el.files.appendChild(s);
+    });
+    Array.prototype.forEach.call(el.ticks.children, function (b, i) {
+      b.setAttribute("aria-current", i === index ? "true" : "false");
+    });
+    el.prev.disabled = index === 0;
+    el.next.disabled = index === list.length - 1;
+    el.panel.setAttribute("aria-labelledby", chapter === "turn" ? "tab-turn" : "tab-task");
+    if (scene.ready) scene.setStep(step);
+  }
+
+  function go(i) {
+    var list = steps();
+    index = Math.max(0, Math.min(list.length - 1, i));
+    render();
+  }
+
+  function setChapter(name) {
+    chapter = name;
+    index = 0;
+    el.tabTurn.setAttribute("aria-selected", String(name === "turn"));
+    el.tabTask.setAttribute("aria-selected", String(name === "task"));
+    buildTicks();
+    render();
+  }
+
+  function startPlay() {
+    playing = true;
+    el.play.textContent = "Pause";
+    tickPlay();
+  }
+
+  function tickPlay() {
+    clearTimeout(playTimer);
+    playTimer = setTimeout(function () {
+      if (!playing) return;
+      var list = steps();
+      index = (index + 1) % list.length;
+      render();
+      tickPlay();
+    }, 6200);
+  }
+
+  function stopPlay() {
+    playing = false;
+    el.play.textContent = "Play run";
+    clearTimeout(playTimer);
+  }
+
+  el.prev.addEventListener("click", function () { stopPlay(); go(index - 1); });
+  el.next.addEventListener("click", function () { stopPlay(); go(index + 1); });
+  el.play.addEventListener("click", function () { playing ? stopPlay() : startPlay(); });
+  el.tabTurn.addEventListener("click", function () { stopPlay(); setChapter("turn"); });
+  el.tabTask.addEventListener("click", function () { stopPlay(); setChapter("task"); });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    if (e.key === "ArrowRight") { stopPlay(); go(index + 1); }
+    if (e.key === "ArrowLeft") { stopPlay(); go(index - 1); }
+  });
+
+  /* ------------------------------------------------------------------ *
+   * The three.js drawing
+   * ------------------------------------------------------------------ */
+
+  var scene = { ready: false, setStep: function () {} };
+
+  function cssColor(name) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || "#888888";
+  }
+
+  function isDark() {
+    var t = document.documentElement.getAttribute("data-theme");
+    if (t === "dark") return true;
+    if (t === "light") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function buildScene() {
+    if (typeof THREE === "undefined") throw new Error("three.js did not load");
+
+    var canvas = document.getElementById("scene");
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+
+    var world = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(38, 1, 0.5, 400);
+
+    var pal = {};
+    function readPalette() {
+      pal.sky = new THREE.Color(cssColor("--stage-sky"));
+      pal.floor = new THREE.Color(cssColor("--stage-floor"));
+      pal.rule = new THREE.Color(cssColor("--rule"));
+      pal.ruleStrong = new THREE.Color(cssColor("--rule-strong"));
+      pal.ink = cssColor("--ink");
+      pal.inkSoft = cssColor("--ink-soft");
+      pal.sheet = cssColor("--sheet");
+      pal.accent = new THREE.Color(cssColor("--accent"));
+      pal.signal = new THREE.Color(cssColor("--signal"));
+      pal.gate = new THREE.Color(cssColor("--gate"));
+      pal.seal = new THREE.Color(cssColor("--seal"));
+      pal.alert = new THREE.Color(cssColor("--alert"));
+      pal.dark = isDark();
+    }
+    readPalette();
+
+    world.background = pal.sky.clone();
+    world.fog = new THREE.Fog(pal.sky.clone(), 62, 165);
+
+    var hemi = new THREE.HemisphereLight(0xffffff, 0x39424c, 0.55);
+    world.add(hemi);
+    var key = new THREE.DirectionalLight(0xffffff, 0.5);
+    key.position.set(18, 30, 20);
+    world.add(key);
+    var fill = new THREE.DirectionalLight(0xffffff, 0.18);
+    fill.position.set(-20, 14, -18);
+    world.add(fill);
+
+    /* ---- labels ------------------------------------------------------ */
+
+    var labels = [];
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
+      c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
+      c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y);
+      c.closePath();
+    }
+
+    function paintLabel(entry) {
+      var dpr = 2;
+      var fsA = 30, fsB = 21, padX = 16, padY = 11, gap = 5;
+      var canvas = entry.canvas || document.createElement("canvas");
+      entry.canvas = canvas;
+      var m = canvas.getContext("2d");
+
+      m.font = "500 " + fsA + 'px "IBM Plex Mono", monospace';
+      var wA = m.measureText(entry.title).width;
+      m.font = "400 " + fsB + 'px "IBM Plex Mono", monospace';
+      var wB = entry.sub ? m.measureText(entry.sub).width : 0;
+
+      var w = Math.ceil(Math.max(wA, wB)) + padX * 2;
+      var h = Math.ceil(fsA + (entry.sub ? gap + fsB : 0)) + padY * 2;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+
+      var c = canvas.getContext("2d");
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.clearRect(0, 0, w, h);
+
+      c.fillStyle = pal.sheet;
+      c.globalAlpha = pal.dark ? 0.92 : 0.94;
+      roundRect(c, 1, 1, w - 2, h - 2, 4);
+      c.fill();
+      c.globalAlpha = 1;
+      c.lineWidth = 2;
+      c.strokeStyle = entry.accent;
+      c.stroke();
+
+      c.textBaseline = "top";
+      c.fillStyle = pal.ink;
+      c.font = "500 " + fsA + 'px "IBM Plex Mono", monospace';
+      c.fillText(entry.title, padX, padY - 2);
+      if (entry.sub) {
+        c.fillStyle = entry.subAccent || pal.inkSoft;
+        c.font = "400 " + fsB + 'px "IBM Plex Mono", monospace';
+        c.fillText(entry.sub, padX, padY + fsA + gap - 1);
+      }
+
+      if (entry.texture) entry.texture.dispose();
+      entry.texture = new THREE.CanvasTexture(canvas);
+      entry.texture.minFilter = THREE.LinearFilter;
+      entry.sprite.material.map = entry.texture;
+      entry.sprite.material.needsUpdate = true;
+
+      var height = entry.worldHeight;
+      entry.sprite.scale.set(height * (w / h), height, 1);
+    }
+
+    function makeLabel(title, sub, accent, worldHeight, subAccent) {
+      var mat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false });
+      var sprite = new THREE.Sprite(mat);
+      sprite.renderOrder = 20;
+      var entry = {
+        sprite: sprite, title: title, sub: sub,
+        accent: accent, subAccent: subAccent, worldHeight: worldHeight || 1.15
+      };
+      labels.push(entry);
+      paintLabel(entry);
+      return entry;
+    }
+
+    function repaintLabels() {
+      labels.forEach(function (entry) {
+        entry.accent = entry.accentToken ? cssColor(entry.accentToken) : entry.accent;
+        entry.subAccent = entry.subToken ? cssColor(entry.subToken) : entry.subAccent;
+        paintLabel(entry);
+      });
+    }
+
+    /* ---- ground and plinths ------------------------------------------ */
+
+    var grid = new THREE.GridHelper(180, 60, pal.ruleStrong.clone(), pal.rule.clone());
+    grid.position.y = -1.4;
+    grid.material.transparent = true;
+    grid.material.opacity = pal.dark ? 0.16 : 0.4;
+    world.add(grid);
+
+    var plinths = [];
+    function makePlinth(cx, cz, sx, sz, tint) {
+      var geo = new THREE.BoxGeometry(sx, 1.0, sz);
+      var mat = new THREE.MeshStandardMaterial({
+        color: pal.floor.clone(), roughness: 1.0, metalness: 0.0,
+        transparent: true, opacity: 0.42
+      });
+      var mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(cx, -0.5, cz);
+      world.add(mesh);
+      var edge = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: tint.clone(), transparent: true, opacity: 0.85 })
+      );
+      edge.position.copy(mesh.position);
+      world.add(edge);
+      plinths.push({ mesh: mesh, edge: edge, tint: tint });
+      return mesh;
+    }
+
+    makePlinth(3.5, -0.5, 32, 17, pal.accent);
+    makePlinth(2, 12, 12.0, 9.0, pal.seal);
+
+    /* ---- nodes -------------------------------------------------------- */
+
+    var nodes = {};
+
+    function zoneColor(zone) {
+      if (zone === ZONE.OUT) return pal.signal;
+      if (zone === ZONE.BOX) return pal.seal;
+      return pal.accent;
+    }
+    function zoneToken(zone) {
+      if (zone === ZONE.OUT) return "--signal";
+      if (zone === ZONE.BOX) return "--seal";
+      return "--accent";
+    }
+
+    Object.keys(NODES).forEach(function (name) {
+      var spec = NODES[name];
+      var tint = zoneColor(spec.zone);
+      var geo = new THREE.BoxGeometry(spec.size[0], spec.size[1], spec.size[2]);
+      var isBox = spec.zone === ZONE.BOX;
+
+      var mat = new THREE.MeshStandardMaterial({
+        color: isBox ? tint.clone() : pal.floor.clone().lerp(tint, 0.38),
+        roughness: 0.8,
+        metalness: 0.05,
+        transparent: true,
+        opacity: isBox ? 0.10 : 1,
+        emissive: tint.clone(),
+        emissiveIntensity: 0.0
+      });
+      var mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(spec.pos[0], spec.pos[1], spec.pos[2]);
+      world.add(mesh);
+
+      var edge = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: tint.clone(), transparent: true, opacity: isBox ? 1.0 : 0.85 })
+      );
+      edge.position.copy(mesh.position);
+      world.add(edge);
+
+      var subTint = (name === "box") ? cssColor("--alert") : null;
+      var label = makeLabel(spec.label, spec.sub, "#" + tint.getHexString(), isBox ? 2.3 : 1.75, subTint);
+      label.accentToken = zoneToken(spec.zone);
+      if (subTint) label.subToken = "--alert";
+      label.sprite.position.set(
+        spec.pos[0],
+        spec.pos[1] + spec.size[1] / 2 + (isBox ? 2.2 : 1.7),
+        spec.pos[2]
+      );
+      world.add(label.sprite);
+
+      nodes[name] = {
+        name: name, spec: spec, mesh: mesh, edge: edge, label: label, tint: tint,
+        pos: new THREE.Vector3(spec.pos[0], spec.pos[1], spec.pos[2]),
+        baseOpacity: isBox ? 0.9 : 0.8
+      };
+    });
+
+    /* ---- wires -------------------------------------------------------- */
+
+    var wires = {};
+
+    function isHop(a, b) {
+      return NODES[a].zone === ZONE.OUT || NODES[b].zone === ZONE.OUT;
+    }
+    function touchesBox(a, b) {
+      return NODES[a].zone === ZONE.BOX || NODES[b].zone === ZONE.BOX;
+    }
+
+    WIRES.forEach(function (pair) {
+      var a = nodes[pair[0]].pos.clone();
+      var b = nodes[pair[1]].pos.clone();
+      var hop = isHop(pair[0], pair[1]);
+      var boxed = touchesBox(pair[0], pair[1]);
+
+      var mid = a.clone().add(b).multiplyScalar(0.5);
+      var span = a.distanceTo(b);
+      mid.y += hop ? span * 0.14 + 1.6 : (boxed ? 1.4 : span * 0.07 + 0.8);
+
+      var curve = new THREE.CatmullRomCurve3([a, mid, b]);
+      var pts = curve.getPoints(64);
+      var geo = new THREE.BufferGeometry().setFromPoints(pts);
+
+      var color = boxed ? pal.seal.clone() : pal.accent.clone();
+      var mat = hop
+        ? new THREE.LineDashedMaterial({ color: color, dashSize: 1.0, gapSize: 0.75, transparent: true, opacity: 0.5 })
+        : new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+
+      var line = new THREE.Line(geo, mat);
+      if (hop) line.computeLineDistances();
+      world.add(line);
+
+      wires[pair[0] + "|" + pair[1]] = {
+        curve: curve, line: line, hop: hop, boxed: boxed,
+        color: color, baseOpacity: boxed ? 0.6 : 0.45
+      };
+    });
+
+    function findWire(a, b) {
+      var direct = wires[a + "|" + b];
+      if (direct) return { wire: direct, flip: false };
+      var back = wires[b + "|" + a];
+      if (back) return { wire: back, flip: true };
+      return null;
+    }
+
+    /* ---- travelling pulses -------------------------------------------- */
+
+    var pulses = [];
+    for (var i = 0; i < 3; i++) {
+      var pgeo = new THREE.SphereGeometry(0.42, 18, 14);
+      var pmat = new THREE.MeshBasicMaterial({ color: pal.signal.clone(), transparent: true, opacity: 0 });
+      var pmesh = new THREE.Mesh(pgeo, pmat);
+      pmesh.renderOrder = 10;
+      world.add(pmesh);
+
+      var hgeo = new THREE.SphereGeometry(1.0, 16, 12);
+      var hmat = new THREE.MeshBasicMaterial({ color: pal.signal.clone(), transparent: true, opacity: 0 });
+      var halo = new THREE.Mesh(hgeo, hmat);
+      world.add(halo);
+
+      pulses.push({ mesh: pmesh, halo: halo });
+    }
+
+    /* ---- step state ---------------------------------------------------- */
+
+    var activePath = [];
+    var activeFocus = {};
+    var progress = 0;
+    var target = new THREE.Vector3(2.0, 3.0, 1.5);
+    var wantTarget = target.clone();
+
+    function setStep(step) {
+      activePath = [];
+      var hops = step.path || [];
+      hops.forEach(function (pair, idx) {
+        var found = findWire(pair[0], pair[1]);
+        if (!found) return;
+        var flip = found.flip;
+        if (step.reverse) flip = !flip;
+        if (step.reverseAll) flip = !flip;
+        if (step.reverseFirst && idx === 0) flip = !flip;
+        if (step.pingpong && idx === 1) flip = !flip;
+        activePath.push({ wire: found.wire, flip: flip });
+      });
+
+      activeFocus = {};
+      (step.focus || []).forEach(function (n) { activeFocus[n] = true; });
+
+      var centre = new THREE.Vector3();
+      var count = 0;
+      (step.focus || []).forEach(function (n) {
+        if (!nodes[n]) return;
+        centre.add(nodes[n].pos);
+        count++;
+      });
+      if (count) {
+        centre.multiplyScalar(1 / count);
+        wantTarget.set(
+          centre.x * 0.42 + 2.0 * 0.58,
+          Math.max(2.2, centre.y * 0.38 + 2.4),
+          centre.z * 0.42 + 2.0 * 0.58
+        );
+      }
+      progress = 0;
+    }
+
+    scene.setStep = setStep;
+
+    /* ---- camera control ------------------------------------------------ */
+
+    var orbit = { theta: Math.PI * 0.66, phi: 0.88, radius: 54 };
+    var drag = null;
+
+    function placeCamera() {
+      var r = orbit.radius;
+      var sp = Math.sin(orbit.phi);
+      camera.position.set(
+        target.x + r * sp * Math.cos(orbit.theta),
+        target.y + r * Math.cos(orbit.phi),
+        target.z + r * sp * Math.sin(orbit.theta)
+      );
+      camera.lookAt(target);
+    }
+
+    canvas.addEventListener("pointerdown", function (e) {
+      drag = { x: e.clientX, y: e.clientY };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      orbit.theta -= (e.clientX - drag.x) * 0.006;
+      orbit.phi = Math.max(0.18, Math.min(1.42, orbit.phi - (e.clientY - drag.y) * 0.005));
+      drag = { x: e.clientX, y: e.clientY };
+    });
+    function endDrag(e) {
+      if (!drag) return;
+      drag = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      orbit.radius = Math.max(24, Math.min(92, orbit.radius + e.deltaY * 0.05));
+    }, { passive: false });
+
+    /* ---- resize --------------------------------------------------------- */
+
+    function resize() {
+      var w = canvas.clientWidth || 1;
+      var h = canvas.clientHeight || 1;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    if (window.ResizeObserver) {
+      new ResizeObserver(resize).observe(canvas);
+    } else {
+      window.addEventListener("resize", resize);
+    }
+    resize();
+
+    /* ---- theme ---------------------------------------------------------- */
+
+    function applyPalette() {
+      readPalette();
+      world.background = pal.sky.clone();
+      world.fog.color = pal.sky.clone();
+      grid.material.opacity = pal.dark ? 0.16 : 0.4;
+
+      plinths.forEach(function (p) {
+        p.mesh.material.color = pal.floor.clone();
+      });
+      plinths[0].edge.material.color = pal.accent.clone();
+      plinths[1].edge.material.color = pal.seal.clone();
+
+      Object.keys(nodes).forEach(function (name) {
+        var node = nodes[name];
+        var tint = zoneColor(node.spec.zone);
+        node.tint = tint;
+        node.edge.material.color = tint.clone();
+        node.mesh.material.emissive = tint.clone();
+        if (node.spec.zone === ZONE.BOX) {
+          node.mesh.material.color = tint.clone();
+        } else {
+          node.mesh.material.color = pal.floor.clone().lerp(tint, 0.38);
+        }
+      });
+
+      Object.keys(wires).forEach(function (k) {
+        var w = wires[k];
+        w.color = w.boxed ? pal.seal.clone() : pal.accent.clone();
+        w.line.material.color = w.color.clone();
+      });
+
+      pulses.forEach(function (p) {
+        p.mesh.material.color = pal.signal.clone();
+        p.halo.material.color = pal.signal.clone();
+      });
+
+      repaintLabels();
+    }
+
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", applyPalette);
+    else if (mq.addListener) mq.addListener(applyPalette);
+    new MutationObserver(applyPalette).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(repaintLabels);
+    }
+
+    /* ---- frame ---------------------------------------------------------- */
+
+    var clock = new THREE.Clock();
+
+    function frame() {
+      requestAnimationFrame(frame);
+      var dt = Math.min(clock.getDelta(), 0.06);
+      var now = performance.now() / 1000;
+
+      target.lerp(wantTarget, 1 - Math.pow(0.001, dt));
+      if (!drag && !reduced) orbit.theta += dt * 0.012;
+      placeCamera();
+
+      var activeWires = {};
+      activePath.forEach(function (hop) { activeWires[hop.wire.line.id] = true; });
+
+      Object.keys(wires).forEach(function (k) {
+        var w = wires[k];
+        var on = activeWires[w.line.id];
+        var want = on ? 1.0 : w.baseOpacity * 0.5;
+        w.line.material.opacity += (want - w.line.material.opacity) * Math.min(1, dt * 7);
+      });
+
+      Object.keys(nodes).forEach(function (name) {
+        var node = nodes[name];
+        var on = activeFocus[name];
+        var wantE = on ? (0.55 + Math.sin(now * 2.4) * 0.12) : 0.0;
+        var m = node.mesh.material;
+        m.emissiveIntensity += (wantE - m.emissiveIntensity) * Math.min(1, dt * 6);
+        var wantEdge = on ? 1.0 : node.baseOpacity * 0.55;
+        node.edge.material.opacity += (wantEdge - node.edge.material.opacity) * Math.min(1, dt * 6);
+        var wantLabel = on ? 1.0 : 0.62;
+        node.label.sprite.material.opacity += (wantLabel - node.label.sprite.material.opacity) * Math.min(1, dt * 6);
+        if (node.spec.zone === ZONE.BOX) {
+          m.opacity = 0.10 + (on ? 0.10 : 0);
+        }
+      });
+
+      var hops = activePath.length;
+      if (hops === 0 || reduced) {
+        pulses.forEach(function (p) { p.mesh.material.opacity = 0; p.halo.material.opacity = 0; });
+      } else {
+        progress += dt * 0.85;
+        var span = hops + 0.9;
+        if (progress > span) progress = 0;
+
+        pulses.forEach(function (p, i) {
+          var local = progress - i * 0.42;
+          if (local < 0 || local > hops) {
+            p.mesh.material.opacity = 0;
+            p.halo.material.opacity = 0;
+            return;
+          }
+          var hopIndex = Math.min(hops - 1, Math.floor(local));
+          var t = local - hopIndex;
+          var hop = activePath[hopIndex];
+          var at = hop.flip ? 1 - t : t;
+          var point = hop.wire.curve.getPointAt(Math.max(0, Math.min(1, at)));
+          p.mesh.position.copy(point);
+          p.halo.position.copy(point);
+          var fade = Math.sin(Math.min(1, t) * Math.PI);
+          p.mesh.material.opacity = 0.55 + fade * 0.45;
+          p.halo.material.opacity = 0.10 + fade * 0.12;
+          var s = 0.9 + fade * 0.35;
+          p.halo.scale.set(s, s, s);
+        });
+      }
+
+      renderer.render(world, camera);
+    }
+
+    scene.ready = true;
+    frame();
+  }
+
+  try {
+    buildScene();
+  } catch (err) {
+    console.error(err);
+    var stage = document.querySelector(".stage");
+    if (stage) {
+      var note = document.createElement("p");
+      note.style.cssText = "position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--ink-soft);font-family:var(--f-mono);font-size:12px;";
+      note.textContent = "The drawing needs WebGL. The steps below still work.";
+      stage.appendChild(note);
+    }
+  }
+
+  buildTicks();
+  render();
+})();
+</script>
+</body>
+</html>

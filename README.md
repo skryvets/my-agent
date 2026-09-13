@@ -16,6 +16,11 @@ It shows five things that are easy to get wrong:
 
 It runs in the terminal, or as a Telegram bot.
 
+[`docs/architecture.html`](docs/architecture.html) draws the whole system in
+three.js. Open it in a browser, turn the drawing, and walk either run one step
+at a time: a chat turn through the tool loop, or a `/task` from the message to
+the pull request. Each step names the file that does the work.
+
 ```mermaid
 flowchart LR
     main["main.go<br/>flag parsing, wiring"]
@@ -377,6 +382,7 @@ internal/task/                       a job end to end: clone, work, push, open a
 internal/sandbox/                    a Docker container for each conversation
 internal/communication/terminal/     stdin and stdout connector
 internal/communication/telegram/     Telegram bot connector
+docs/architecture.html               the drawing of all of the above
 ```
 
 A connector depends on the agent, never the other way round. Each one takes an
