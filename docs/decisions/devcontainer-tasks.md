@@ -51,9 +51,9 @@
 **Source:** assumed default
 
 ## Deployment
-**Q:** What happens to the Railway deployment?
-**A:** `railway.json` and the Railway text are removed, because Railway gives a service no Docker socket. The bot runs on a machine with Docker.
-**Source:** assumed default
+**Q:** Where does the bot run, and where does a developer work on it?
+**A:** The bot runs on a machine with a Docker daemon. The repository carries no configuration for a hosting platform or for a remote development platform. A developer works in the dev container of the repository, `.devcontainer/devcontainer.json`.
+**Source:** user (2026-09-14)
 
 ## Supported dev container properties
 **Q:** How much of the dev container specification does the agent implement?
@@ -67,5 +67,15 @@
 
 ## File ownership in the bind mount
 **Q:** How can a non-root `remoteUser` write to a checkout the host cloned?
-**A:** The agent makes the checkout writable for every user after the clone, and the container makes what it wrote writable for every user before it is removed, so the host can delete the checkout. The reference tool changes the UID of the user in the image instead (`updateRemoteUserUID`), which the agent does not do.
-**Source:** assumed (mid-build)
+**A:** The agent makes the checkout writable for every user after the clone, and the container makes what it wrote writable for every user before it is removed, so the host can delete the checkout. The reference tool changes the UID of the user in the image instead (`updateRemoteUserUID`), which the agent does not do. The files are shared only with the container of the task, so the wider permissions are accepted.
+**Source:** user (2026-09-14)
+
+## features
+**Q:** Does the agent install the `features` of a dev container?
+**A:** Not for now. The agent skips `features` and tells the chat.
+**Source:** user (2026-09-14)
+
+## .dockerignore
+**Q:** Must the build read `.dockerignore` before it sends the context?
+**A:** Not for now. The whole context is sent, and a TODO in `internal/sandbox/build.go` marks the gap.
+**Source:** user (2026-09-14)
