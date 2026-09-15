@@ -1,0 +1,20 @@
+[Unit]
+Description=my-agent Telegram bot
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=exec
+User=my-agent
+Group=my-agent
+SupplementaryGroups=docker
+EnvironmentFile=/etc/my-agent/env
+StateDirectory=my-agent
+WorkingDirectory=/var/lib/my-agent
+ExecStart=/usr/local/bin/my-agent -state /var/lib/my-agent/state
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

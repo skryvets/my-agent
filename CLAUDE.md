@@ -52,6 +52,7 @@ internal/communication/telegram/     Telegram bot connector, the default
   types.go                           Bot API wire types
   text.go                            splitting an answer to fit a message
 internal/communication/terminal/     stdin and stdout connector, -cli
+deploy/                              the systemd service and the script that installs it
 ```
 
 ## Rules
@@ -117,7 +118,10 @@ socket in `internal/sandbox/fake_test.go`. No test reaches the network.
 
 ## Deployment
 
-A machine with a Docker daemon, one instance only - only one process may poll
-`getUpdates`. `go build` at the repository root, and start the binary with no
-flag for the bot. Without `GITHUB_TOKEN` the bot runs with `/task` off and needs
-no Docker.
+An Ubuntu server with a Docker daemon, one instance only - only one process may
+poll `getUpdates`. `deploy/deploy.sh` builds the binary, stops the `my-agent`
+systemd service, installs the binary and `deploy/my-agent.service`, and starts
+it again. The secrets are in `/etc/my-agent/env` on the server, never in the
+repository. Do not give the unit a private `/tmp`: a checkout is bound into the
+container by its path on the host. Without `GITHUB_TOKEN` the bot runs with
+`/task` off.
