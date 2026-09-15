@@ -59,7 +59,6 @@ func (r *Runner) release(ctx context.Context, key string) {
 
 // shareCheckout makes the clone writable for every user, because the user a
 // dev container runs as is rarely the user that cloned on the host.
-// TODO: change the UID of the user in the image instead, as updateRemoteUserUID does in the reference tool
 func shareCheckout(dir string) error {
 	return filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
