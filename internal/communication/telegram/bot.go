@@ -12,14 +12,13 @@ import (
 type Bot struct {
 	client    *client
 	agent     Agent
-	sandbox   Sandbox
 	tasks     Tasks
 	allowed   map[int64]bool
 	retryBase time.Duration
 
 	mu       sync.Mutex
 	sessions map[int64]chan string
-	waiting  map[string]chan bool
+	working  map[int64]context.CancelFunc
 }
 
 // Only one instance may poll getUpdates at a time, so the bot runs as a single
@@ -47,10 +46,6 @@ func (b *Bot) run(ctx context.Context) error {
 		for _, u := range updates {
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1
-			}
-			if u.CallbackQuery != nil {
-				b.answer(ctx, u.CallbackQuery)
-				continue
 			}
 			b.dispatch(ctx, u)
 		}

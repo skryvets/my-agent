@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
 // newRunner builds a runner whose repository, GitHub and container are all
@@ -64,20 +66,43 @@ func newOriginAt(t *testing.T, owner, name string) string {
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{
-		{"init", "--initial-branch=main"},
-		{"-c", "user.name=test", "-c", "user.email=t@e.st", "add", "-A"},
-		{"-c", "user.name=test", "-c", "user.email=t@e.st", "commit", "-m", "first"},
-	} {
-		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
+	gitIn(t, repo, "init", "--initial-branch=main")
+	commitTo(t, repo, map[string]string{
+		"README.md":          "hello\n",
+		".devcontainer.json": `{"image": "golang:1.26", "postCreateCommand": "go version"}`,
+	})
+	return root
+}
+
+// rewriteOrigin changes the repository the runner clones from. An empty
+// content deletes the file.
+func rewriteOrigin(t *testing.T, runner *Runner, files map[string]string) {
+	t.Helper()
+	commitTo(t, filepath.Join(runner.GitHost, "skryvets", "my-agent.git"), files)
+}
+
+func commitTo(t *testing.T, repo string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		file := filepath.Join(repo, name)
+		if content == "" {
+			os.Remove(file)
+			continue
+		}
+		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	return root
+	gitIn(t, repo, "-c", "user.name=test", "-c", "user.email=t@e.st", "add", "-A")
+	gitIn(t, repo, "-c", "user.name=test", "-c", "user.email=t@e.st", "commit", "-m", "change")
+}
+
+func gitIn(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
 }
 
 func TestStartOpensAPullRequest(t *testing.T) {
@@ -123,6 +148,19 @@ func TestStartOpensAPullRequest(t *testing.T) {
 	}
 	if !strings.Contains(told[0], "fix the lint warning") || !strings.Contains(told[0], "Do not run git") {
 		t.Errorf("the model was told %q", told[0])
+	}
+	if !strings.Contains(told[0], "/workspaces/my-agent") {
+		t.Errorf("the model was not told where the workspace is: %q", told[0])
+	}
+
+	// The dev container was set up before the work, and gave the checkout
+	// back to the host after it.
+	ran := box.commands()
+	if len(ran) != 2 || strings.Join(ran[0], " ") != keys[0]+" sh -c go version" {
+		t.Errorf("commands = %#v", ran)
+	}
+	if last := ran[len(ran)-1]; last[1] != "chmod" {
+		t.Errorf("the checkout was not given back: %#v", ran)
 	}
 
 	// Naming the change is a question of its own, with no tools behind it.
@@ -266,5 +304,85 @@ func TestStartFallsBackWhenTheModelWillNotNameTheChange(t *testing.T) {
 	}
 	if title := (*opened)[0]["title"]; title != "fix the lint warning" {
 		t.Errorf("title = %#v, want the message that asked", title)
+	}
+}
+
+func TestStartNeedsADevContainer(t *testing.T) {
+	model := &fakeAgent{answer: "done"}
+	box := newFakeSandbox()
+	runner, _ := newRunner(t, model, box)
+	rewriteOrigin(t, runner, map[string]string{".devcontainer.json": ""})
+
+	err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {})
+	if !errors.Is(err, devcontainer.ErrMissing) {
+		t.Fatalf("err = %v, want ErrMissing", err)
+	}
+	if bound, _ := box.seen(); len(bound) != 0 {
+		t.Errorf("a container started with no dev container: %#v", bound)
+	}
+	if _, told := model.seen(); len(told) != 0 {
+		t.Errorf("the model worked with no environment: %#v", told)
+	}
+}
+
+func TestStartStopsWhenTheSetupFails(t *testing.T) {
+	cases := map[string]func(*fakeSandbox){
+		"a command that exits":  func(box *fakeSandbox) { box.exit = map[string]int{"sh": 2} },
+		"a daemon that is gone": func(box *fakeSandbox) { box.execErr = errors.New("the daemon is gone") },
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			model := &fakeAgent{answer: "done"}
+			box := newFakeSandbox()
+			breakIt(box)
+			runner, _ := newRunner(t, model, box)
+
+			if err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {}); err == nil {
+				t.Fatal("expected an error")
+			}
+			if _, told := model.seen(); len(told) != 0 {
+				t.Errorf("the model worked in a container that is not set up: %#v", told)
+			}
+			if _, closed := box.seen(); len(closed) != 1 {
+				t.Errorf("the container of a failed setup was kept: %#v", closed)
+			}
+		})
+	}
+
+	box := newFakeSandbox()
+	box.exit = map[string]int{"sh": 2}
+	runner, _ := newRunner(t, &fakeAgent{}, box)
+	err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "postCreateCommand exited with 2: the setup broke") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestStartTellsTheChatWhatItSkips(t *testing.T) {
+	runner, _ := newRunner(t, &fakeAgent{answer: "done"}, newFakeSandbox())
+	rewriteOrigin(t, runner, map[string]string{
+		".devcontainer.json": `{"image": "golang:1.26", "features": {"ghcr.io/devcontainers/features/node:1": {}}}`,
+	})
+	progress := &reporter{}
+
+	if err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", progress.report); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if lines := strings.Join(progress.seen(), "\n"); !strings.Contains(lines, "features, which I skip") {
+		t.Errorf("the chat was not told: %s", lines)
+	}
+}
+
+func TestStartRecordsARunStoppedFromTheChat(t *testing.T) {
+	ctx, stop := context.WithCancel(context.Background())
+	model := &fakeAgent{write: func(string) { stop() }, err: context.Canceled}
+	runner, _ := newRunner(t, model, newFakeSandbox())
+
+	if err := runner.Start(ctx, "99", "skryvets/my-agent", "fix it", func(string) {}); err == nil {
+		t.Fatal("expected an error")
+	}
+	runs := loadRuns(t, runner)
+	if len(runs) != 1 || runs[0].State != Stopped || !runs[0].State.Done() {
+		t.Errorf("runs = %#v", runs)
 	}
 }

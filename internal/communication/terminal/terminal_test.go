@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/skryvets/my-agent/internal/agent"
-	"github.com/skryvets/my-agent/internal/approval"
 )
 
 type fakeAgent struct {
@@ -71,57 +70,6 @@ func TestRunReportsFailedTurnAndDropsIt(t *testing.T) {
 	}
 }
 
-// recordingApprovals keeps the handler the session registered.
-type recordingApprovals struct {
-	ask approval.Ask
-}
-
-func (r *recordingApprovals) Handle(ask approval.Ask) { r.ask = ask }
-
-func TestSessionAsksOnTheSameInput(t *testing.T) {
-	approvals := &recordingApprovals{}
-	var answers []bool
-
-	model := fakeAgent{answer: func(agent.History) (agent.Message, error) {
-		// A tool asks while Chat runs, which is when the loop above is
-		// blocked and the input is free.
-		allowed, err := approvals.ask(context.Background(), "", approval.Request{
-			Tool:    "shell",
-			Details: "curl https://example.com",
-		})
-		if err != nil {
-			t.Errorf("ask: %v", err)
-		}
-		answers = append(answers, allowed)
-		return agent.Message{Content: "answer"}, nil
-	}}
-
-	var out, errOut strings.Builder
-	chat := &session{
-		model:     model,
-		approvals: approvals,
-		in:        strings.NewReader("first\ny\nsecond\nno\nthird\n"),
-		out:       &out,
-		errOut:    &errOut,
-	}
-	if err := chat.run(context.Background()); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-
-	if len(answers) != 3 {
-		t.Fatalf("answers = %#v", answers)
-	}
-	if !answers[0] || answers[1] || answers[2] {
-		t.Errorf("answers = %#v, want yes, no, then no for the end of input", answers)
-	}
-	if !strings.Contains(out.String(), "may I run this?") {
-		t.Errorf("the question was not printed: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "curl https://example.com") {
-		t.Errorf("the question does not say what would run: %q", out.String())
-	}
-}
-
 func TestRunReadsTheRealStandardStreams(t *testing.T) {
 	in, questions, err := os.Pipe()
 	if err != nil {
@@ -139,15 +87,11 @@ func TestRunReadsTheRealStandardStreams(t *testing.T) {
 	io.WriteString(questions, "hello\n")
 	questions.Close()
 
-	approvals := &recordingApprovals{}
 	model := fakeAgent{answer: func(agent.History) (agent.Message, error) {
 		return agent.Message{Content: "answer"}, nil
 	}}
-	if err := Run(context.Background(), model, WithApproval(approvals)); err != nil {
+	if err := Run(context.Background(), model); err != nil {
 		t.Fatalf("Run: %v", err)
-	}
-	if approvals.ask == nil {
-		t.Error("the session did not offer to answer the questions")
 	}
 
 	printed, err := os.ReadFile(out.Name())

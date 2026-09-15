@@ -30,12 +30,12 @@ export TELEGRAM_ALLOWED_USERS=...
 ```
 
 `OPENROUTER_API_KEY` is required - `main.go` exits without it. The Telegram variables
-are only needed when running with `-telegram`.
+are needed for the default mode, the Telegram bot, and not for `-cli`.
 
 ## Apps
 
 - **code-server** opens the checkout in the browser
-- **Terminal chat** runs `go run .`, the stdin and stdout connector
+- **Terminal chat** runs `go run . -cli`, the stdin and stdout connector
 - **go test -race** runs `go test ./... -race`, the gate everything ships behind
 
 ## GitHub access

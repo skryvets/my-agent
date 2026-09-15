@@ -20,6 +20,9 @@ type fakeTasks struct {
 	lines       []string
 	err         error
 	lost        []task.Run
+	// started, when it is set, is closed when a run begins, and the run then
+	// lasts until it is stopped.
+	started chan struct{}
 }
 
 func (f *fakeTasks) Start(ctx context.Context, chat, repository, instruction string, report task.Report) error {
@@ -29,6 +32,11 @@ func (f *fakeTasks) Start(ctx context.Context, chat, repository, instruction str
 
 	for _, line := range f.lines {
 		report(line)
+	}
+	if f.started != nil {
+		close(f.started)
+		<-ctx.Done()
+		return ctx.Err()
 	}
 	return f.err
 }
@@ -77,7 +85,7 @@ func TestTaskAnswersWhenItCannotRun(t *testing.T) {
 
 	// No runner was wired in.
 	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
-	if got := fake.nextSent(t); !strings.Contains(got, "-sandbox") {
+	if got := fake.nextSent(t); !strings.Contains(got, "GITHUB_TOKEN") {
 		t.Errorf("reply = %q", got)
 	}
 

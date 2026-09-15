@@ -1,6 +1,6 @@
 # my-agent
 
-A terminal and Telegram chatbot over the OpenRouter chat completions API. No
+A Telegram and terminal chatbot over the OpenRouter chat completions API. No
 third-party Go dependencies - `go.mod` has no `require` block, and it should
 stay that way unless there is a reason the standard library cannot cover.
 
@@ -16,40 +16,42 @@ internal/agent/                      the model
   stream.go                          server-sent events parsing
   reasoning.go                       reassembling streamed reasoning_details
   history.go                         a conversation in the API's wire format
-internal/tools/                      what the agent can do
-  workspace.go                       the Workspace interface and the host
+internal/tools/                      what the agent can do in a dev container
+  workspace.go                       the Workspace interface
   shell.go                           run a command
   file.go                            read a file, write a file
-  fetch.go                           get a URL
-internal/approval/                   the person in the loop
-  approval.go                        the Broker between a tool and a person
-  policy.go                          what runs without a question
-  guard.go                           a tool that asks first
+internal/devcontainer/               the environment a repository describes
+  devcontainer.go                    Config, Load, where the file is
+  jsonc.go                           JSON with comments into JSON
+  lifecycle.go                       the setup commands in their three forms
+  environment.go                     the workspace, the environment, variables
 internal/conversation/               which conversation a call belongs to
 internal/task/                       a job end to end, ending in a pull request
   task.go                            Runner, Start, the runs a restart caught
   work.go                            the stages of one run
+  environment.go                     set up and release the dev container
   git.go                             git on the host, where the token is
   github.go                          the REST calls that open the request
   store.go                           the runs on disk
-internal/sandbox/                    one container for each conversation
+internal/sandbox/                    one dev container for each task
   docker.go                          the Engine API over the unix socket
   container.go                       exec in one container
   archive.go                         a file in and out as a tar
-  pool.go                            find or start the container of a chat
+  pool.go                            bind and find the container of a task
+  image.go                           pull an image, start a container, clear an earlier run
+  build.go                           build an image from a Dockerfile
   workspace.go                       the Workspace the tools see
   reaper.go                          throw away what went quiet
-  image.go                           pull, start, clear an earlier run
-internal/communication/terminal/     stdin and stdout connector
-internal/communication/telegram/     Telegram bot connector
+internal/communication/telegram/     Telegram bot connector, the default
   telegram.go                        Run, options, configuration from the environment
-  approval.go                        the Approve and Deny buttons
   task.go                            the /task command
+  stop.go                            the /stop command
   bot.go                             the getUpdates poll loop and its backoff
   session.go                         per-chat goroutine, commands, history
   client.go                          Bot API transport
   types.go                           Bot API wire types
   text.go                            splitting an answer to fit a message
+internal/communication/terminal/     stdin and stdout connector, -cli
 ```
 
 ## Rules
@@ -68,28 +70,28 @@ internal/communication/telegram/     Telegram bot connector
   is a new file there plus a line in `main.go` - `internal/agent` stays a loop
   that knows no tool by name. A tool reports a failure as text for the model,
   and returns an error only when the call itself was malformed
-- a tool never touches the host directly. It works through `tools.Workspace`,
-  which is `tools.Host` in a terminal chat and `*sandbox.Pool` with `-sandbox`.
-  A tool must not be able to tell the two apart
+- a tool never touches the host. It works through `tools.Workspace`, which is
+  `*sandbox.Pool`, the dev container of a task. A chat, in Telegram or with
+  `-cli`, offers the model no tools. There is no host mode and no approval
+  gate: the container is the boundary
+- the environment of a task comes from the `devcontainer.json` of the
+  repository, never from the agent. Read it with `internal/devcontainer`, and
+  never put a value of the host into it, because the host holds the token
 - `internal/sandbox` speaks the Docker Engine API over the unix socket with
   `net/http` and its own `DialContext`. That is what keeps `go.mod` empty of
   requirements, so do not reach for the Docker SDK. The API version is pinned
   in `docker.go`
 - which conversation a call belongs to travels in the context, not in an
-  argument. A connector names it once with `conversation.WithKey`, and the
-  sandbox and the approval broker both read it there
-- a tool the policy does not name waits for a person. Widen `approval.Default`
-  rather than working around the guard, and keep anything that leaves the
-  sandbox out of it. A refused call is reported to the model as text, so it
-  tries something else instead of asking again
-- a connector declares the small interface it needs (`Sandbox`, `Approvals`,
-  `Tasks`) and main passes the real thing in through an `Option`. That is how
-  the bot answers the questions of the tools without the tools knowing about
-  Telegram
+  argument. The task runner names it once with `conversation.WithKey`, and the
+  sandbox reads it there
+- a connector declares the small interface it needs (`Agent`, `Tasks`) and main
+  passes the real thing in through an `Option`. That is how the bot starts a
+  task without the task knowing about Telegram
+- a message or a task runs on a context that `/stop` cancels. Replies go out on
+  the context of the bot, so the chat can still be answered after a stop
 - git and the GitHub API run in the agent process, never in the container. The
-  model must not see the token and must not need a network, so a task clones on
-  the host and lends the checkout to the container with a bind. Do not move
-  either one inside
+  model must not see the token, so a task clones on the host and lends the
+  checkout to the container with a bind. Do not move either one inside
 - every error that reaches a chat passes through `Git.hide`, because the clone
   address carries the token
 - a failed turn is reported and dropped, never fatal. Only `main.go` calls
@@ -101,6 +103,7 @@ internal/communication/telegram/     Telegram bot connector
   dead code, and do not enable reasoning without being asked
 - the README carries two mermaid diagrams, one of the package structure and one
   of a single turn. Changing either shape means updating them
+- decisions about behavior are recorded in `docs/decisions/`
 
 ## Testing
 
@@ -109,10 +112,12 @@ its coverage above 90%; `main.go` is wiring and is not covered.
 
 Test files mirror source files (`session.go` / `session_test.go`). The shared
 Telegram fake, an `httptest` server that records calls, lives in `fake_test.go`
-alongside `fakeAgent` and `newTestBot`. No test reaches the network.
+alongside `fakeAgent` and `newTestBot`. The Docker fake answers on a unix
+socket in `internal/sandbox/fake_test.go`. No test reaches the network.
 
 ## Deployment
 
-Railway worker service, single replica - only one instance may poll
-`getUpdates`. Railpack builds the root package as `out` and `railway.json`
-starts it, so `main.go` stays at the repository root.
+A machine with a Docker daemon, one instance only - only one process may poll
+`getUpdates`. `go build` at the repository root, and start the binary with no
+flag for the bot. Without `GITHUB_TOKEN` the bot runs with `/task` off and needs
+no Docker.

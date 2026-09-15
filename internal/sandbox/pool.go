@@ -9,34 +9,24 @@ import (
 	"time"
 
 	"github.com/skryvets/my-agent/internal/conversation"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
-const (
-	// DefaultImage carries the Go toolchain and git, so the agent can build
-	// and push what it changes.
-	DefaultImage = "golang:1.26"
-
-	// DefaultIdle is how long a container outlives the last command it ran.
-	DefaultIdle = 30 * time.Minute
-
-	// workDir is where every container works and where the tools resolve a
-	// relative path.
-	workDir = "/work"
-)
+// DefaultIdle is how long a container outlives the last command it ran.
+const DefaultIdle = 30 * time.Minute
 
 // Options configure a Pool. The zero value of each one is a sane default.
 type Options struct {
 	Socket string
-	Image  string
 	Idle   time.Duration
 }
 
-// Pool gives each conversation one container and throws it away when the
-// conversation ends or goes quiet. Pool satisfies the Workspace the tools
-// need, and reads the conversation out of the context of each call.
+// Pool holds one container for each conversation that was given one, and
+// throws it away when the conversation ends or goes quiet. Pool satisfies the
+// Workspace the tools need, and reads the conversation out of the context of
+// each call.
 type Pool struct {
 	docker *docker
-	image  string
 	idle   time.Duration
 
 	mu      sync.Mutex
@@ -48,8 +38,8 @@ type entry struct {
 	lastUse   time.Time
 }
 
-// New reaches the daemon, makes sure the image is there and starts the reaper.
-// The reaper stops with ctx.
+// New reaches the daemon, clears an earlier run and starts the reaper. The
+// reaper stops with ctx.
 func New(ctx context.Context, options Options) (*Pool, error) {
 	socket := options.Socket
 	if socket == "" {
@@ -57,12 +47,8 @@ func New(ctx context.Context, options Options) (*Pool, error) {
 	}
 	pool := &Pool{
 		docker:  newDocker(socket),
-		image:   options.Image,
 		idle:    options.Idle,
 		running: make(map[string]*entry),
-	}
-	if pool.image == "" {
-		pool.image = DefaultImage
 	}
 	if pool.idle <= 0 {
 		pool.idle = DefaultIdle
@@ -74,22 +60,39 @@ func New(ctx context.Context, options Options) (*Pool, error) {
 	if err := pool.sweepOrphans(ctx); err != nil {
 		return nil, err
 	}
-	if err := pool.pullImage(ctx); err != nil {
-		return nil, err
-	}
-
 	go pool.reap(ctx)
 	return pool, nil
 }
 
-// Close throws away the container of one conversation. Everything written
-// inside it is lost, which is what /reset promises.
+// Bind starts the dev container of a repository for one conversation, with
+// the checkout on the host mounted as its workspace. The image is pulled or
+// built first, which can take minutes, so the lock is only held to start it.
+func (p *Pool) Bind(ctx context.Context, key string, config devcontainer.Config) error {
+	image, err := p.image(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, taken := p.running[key]; taken {
+		return fmt.Errorf("%s already has a container", key)
+	}
+	container, err := p.start(ctx, key, image, config)
+	if err != nil {
+		return err
+	}
+	p.running[key] = &entry{container: container, lastUse: time.Now()}
+	return nil
+}
+
+// Close throws away the container of one conversation, with everything
+// written inside it that is not in the workspace.
 func (p *Pool) Close(ctx context.Context, key string) error {
 	p.mu.Lock()
 	held, ok := p.running[key]
 	delete(p.running, key)
 	p.mu.Unlock()
-
 	if !ok {
 		return nil
 	}
@@ -110,44 +113,16 @@ func (p *Pool) Shutdown(ctx context.Context) {
 	}
 }
 
-// container returns the container of the conversation and starts one the first
-// time. The lock is held across the start, which is fast because New already
-// pulled the image.
+// container returns the container of the conversation in ctx.
 func (p *Pool) container(ctx context.Context) (*Container, error) {
 	key := conversation.KeyOf(ctx)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	if held, ok := p.running[key]; ok {
-		held.lastUse = time.Now()
-		return held.container, nil
+	held, ok := p.running[key]
+	if !ok {
+		return nil, fmt.Errorf("%s has no container", key)
 	}
-
-	container, err := p.start(ctx, key, "")
-	if err != nil {
-		return nil, err
-	}
-	p.running[key] = &entry{container: container, lastUse: time.Now()}
-	return container, nil
-}
-
-// Bind starts the container of a conversation on a host directory, which the
-// container sees as its working directory. A task uses it to work on a real
-// checkout that the agent process cloned, so the container still needs no
-// network and never sees the token.
-func (p *Pool) Bind(ctx context.Context, key, dir string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if _, taken := p.running[key]; taken {
-		return fmt.Errorf("%s already has a container", key)
-	}
-
-	container, err := p.start(ctx, key, dir)
-	if err != nil {
-		return err
-	}
-	p.running[key] = &entry{container: container, lastUse: time.Now()}
-	return nil
+	held.lastUse = time.Now()
+	return held.container, nil
 }

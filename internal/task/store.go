@@ -18,12 +18,13 @@ const (
 	Opened      State = "opened"
 	NoChange    State = "no change"
 	Failed      State = "failed"
+	Stopped     State = "stopped"
 	Interrupted State = "interrupted"
 )
 
 // Done reports whether a state is the last one of a run.
 func (s State) Done() bool {
-	return s == Opened || s == NoChange || s == Failed || s == Interrupted
+	return s == Opened || s == NoChange || s == Failed || s == Stopped || s == Interrupted
 }
 
 // Run is one coding task, from the message that asked for it to the pull
@@ -41,8 +42,8 @@ type Run struct {
 	Ended       time.Time `json:"ended,omitzero"`
 }
 
-// Store keeps the runs on disk. Railway restarts a worker whenever it
-// redeploys, and a run that was under way must not simply vanish.
+// Store keeps the runs on disk. A deploy restarts the bot, and a run that was
+// under way must not simply vanish.
 type Store struct {
 	// Dir holds one file for each run. An empty Dir keeps nothing.
 	Dir string

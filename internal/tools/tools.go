@@ -1,5 +1,5 @@
-// Package tools is the set of actions the agent can take: a shell command, a
-// file read, a file write and an HTTP fetch. Each type satisfies agent.Tool.
+// Package tools is the set of actions the agent can take in a dev container: a
+// shell command, a file read and a file write. Each type satisfies agent.Tool.
 package tools
 
 import (

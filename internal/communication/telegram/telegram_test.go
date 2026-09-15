@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"github.com/skryvets/my-agent/internal/approval"
 	"reflect"
 	"testing"
 
@@ -42,24 +41,12 @@ func TestRunRequiresToken(t *testing.T) {
 }
 
 func TestOptionsReachTheBot(t *testing.T) {
-	box := &fakeSandbox{}
-	approvals := &fakeApprovals{}
+	tasks := &fakeTasks{}
 	bot := &Bot{}
 
-	WithSandbox(box)(bot)
-	WithApproval(approvals)(bot)
+	WithTasks(tasks)(bot)
 
-	if bot.sandbox != box {
-		t.Error("the sandbox did not reach the bot")
-	}
-	if approvals.ask == nil {
-		t.Error("the bot did not offer to answer the questions")
+	if bot.tasks != tasks {
+		t.Error("the tasks did not reach the bot")
 	}
 }
-
-// fakeApprovals records the handler the bot registered.
-type fakeApprovals struct {
-	ask approval.Ask
-}
-
-func (f *fakeApprovals) Handle(ask approval.Ask) { f.ask = ask }

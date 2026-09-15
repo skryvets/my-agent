@@ -9,9 +9,10 @@ import (
 
 // task answers /task <owner/name> <what to do>. The chat waits for the run,
 // which takes minutes, and reads the progress as it arrives.
-func (b *Bot) task(ctx context.Context, chatID int64, text string) {
+// ctx carries the replies, and work is the run itself, which /stop ends.
+func (b *Bot) task(ctx, work context.Context, chatID int64, text string) {
 	if b.tasks == nil {
-		b.reply(ctx, chatID, "I cannot open pull requests. Start me with -sandbox and a GitHub token.")
+		b.reply(ctx, chatID, "I cannot open pull requests. Start me with GITHUB_TOKEN set, on a machine with Docker.")
 		return
 	}
 
@@ -23,7 +24,10 @@ func (b *Bot) task(ctx context.Context, chatID int64, text string) {
 	}
 
 	report := func(line string) { b.reply(ctx, chatID, line) }
-	if err := b.tasks.Start(ctx, chatKey(chatID), repository, instruction, report); err != nil {
+	if err := b.tasks.Start(work, chatKey(chatID), repository, instruction, report); err != nil {
+		if work.Err() != nil {
+			return
+		}
 		log.Printf("task in chat %d: %v", chatID, err)
 		b.reply(ctx, chatID, "The task stopped: "+err.Error())
 	}
