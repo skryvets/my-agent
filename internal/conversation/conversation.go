@@ -1,6 +1,6 @@
 // Package conversation says which conversation a call belongs to. The answer
-// travels in the context, so one shared agent can serve many chats and each
-// one still gets its own container and its own questions.
+// travels in the context, so one shared agent can serve many tasks and each
+// one still reaches its own container.
 package conversation
 
 import "context"

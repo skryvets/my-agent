@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/skryvets/my-agent/internal/agent"
-	"github.com/skryvets/my-agent/internal/approval"
 	"github.com/skryvets/my-agent/internal/task"
 )
 
@@ -25,19 +24,6 @@ import (
 type Agent interface {
 	Model() string
 	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
-}
-
-// Sandbox is the throwaway workspace the tools of one chat work in.
-// *sandbox.Pool satisfies it. A bot without one runs its tools on the host.
-type Sandbox interface {
-	// Close throws the workspace of one chat away.
-	Close(ctx context.Context, key string) error
-}
-
-// Approvals carries the questions of the tools to the person in the chat.
-// *approval.Broker satisfies it.
-type Approvals interface {
-	Handle(ask approval.Ask)
 }
 
 // Tasks does a coding job end to end and opens a pull request.
@@ -50,19 +36,8 @@ type Tasks interface {
 // An Option changes the bot before it starts polling.
 type Option func(*Bot)
 
-// WithSandbox gives each chat its own workspace, which /reset throws away.
-func WithSandbox(box Sandbox) Option {
-	return func(b *Bot) { b.sandbox = box }
-}
-
-// WithApproval makes the bot ask before a tool call the policy does not allow
-// by itself, with a button for yes and one for no.
-func WithApproval(approvals Approvals) Option {
-	return func(b *Bot) { approvals.Handle(b.ask) }
-}
-
-// WithTasks answers /task, which clones a repository, changes it and opens a
-// pull request.
+// WithTasks answers /task, which clones a repository, changes it in its dev
+// container and opens a pull request.
 func WithTasks(tasks Tasks) Option {
 	return func(b *Bot) { b.tasks = tasks }
 }
@@ -88,7 +63,7 @@ func Run(ctx context.Context, model Agent, options ...Option) error {
 		allowed:   allowed,
 		retryBase: time.Second,
 		sessions:  map[int64]chan string{},
-		waiting:   map[string]chan bool{},
+		working:   map[int64]context.CancelFunc{},
 	}
 	for _, option := range options {
 		option(bot)

@@ -1,11 +1,12 @@
-// Package sandbox runs the agent's tools inside a Docker container, one for
-// each conversation, with no network of its own.
+// Package sandbox starts the dev container of a repository and runs the
+// agent's tools inside it, one container for each conversation.
 package sandbox
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -94,4 +95,39 @@ func dockerError(method, path string, resp *http.Response) error {
 		return fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, answer.Message)
 	}
 	return fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))
+}
+
+// progressTail is how much of a failed build is kept to say why it failed.
+const progressTail = 2000
+
+// readProgress waits for a pull or a build to end and returns the image id a
+// build reports. The daemon answers both with 200 and sends a failure inside
+// the stream, so the status alone says nothing.
+func readProgress(body io.Reader) (string, error) {
+	decoder := json.NewDecoder(body)
+	var image, log string
+	for {
+		var message struct {
+			Stream string `json:"stream"`
+			Error  string `json:"error"`
+			Aux    struct {
+				ID string `json:"ID"`
+			} `json:"aux"`
+		}
+		if err := decoder.Decode(&message); err == io.EOF {
+			return image, nil
+		} else if err != nil {
+			return "", err
+		}
+		if message.Error != "" {
+			return "", errors.New(strings.TrimSpace(strings.TrimSpace(log) + "\n" + message.Error))
+		}
+		if message.Aux.ID != "" {
+			image = message.Aux.ID
+		}
+		log += message.Stream
+		if len(log) > progressTail {
+			log = log[len(log)-progressTail:]
+		}
+	}
 }

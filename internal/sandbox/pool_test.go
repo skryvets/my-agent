@@ -7,21 +7,8 @@ import (
 	"time"
 
 	"github.com/skryvets/my-agent/internal/conversation"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
-
-func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
-	t.Helper()
-	options.Socket = fake.socket
-
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	pool, err := New(ctx, options)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return pool
-}
 
 func TestNewReachesTheDaemonAndClearsAnEarlierRun(t *testing.T) {
 	fake := newFakeDocker(t)
@@ -35,19 +22,8 @@ func TestNewReachesTheDaemonAndClearsAnEarlierRun(t *testing.T) {
 	if !fake.asked("DELETE /containers/left-over-01") {
 		t.Errorf("the container of an earlier run was kept: %#v", fake.seen())
 	}
-	if fake.asked("POST /images/create") {
-		t.Error("an image the daemon already has was pulled again")
-	}
-}
-
-func TestNewPullsAnImageTheDaemonDoesNotHave(t *testing.T) {
-	fake := newFakeDocker(t)
-	fake.images = map[string]bool{}
-
-	newTestPool(t, fake, Options{Image: "alpine:3"})
-
-	if !fake.asked("POST /images/create") {
-		t.Errorf("the image was not pulled: %#v", fake.seen())
+	if fake.asked("POST /images/create") || fake.asked("POST /containers/create") {
+		t.Errorf("the pool started something before it was asked: %#v", fake.seen())
 	}
 }
 
@@ -70,96 +46,142 @@ func TestNewReportsWhatTheDaemonRefuses(t *testing.T) {
 	}
 }
 
-func TestPoolStartsOneContainerForEachConversation(t *testing.T) {
+func TestBindStartsTheDevContainerOnTheCheckout(t *testing.T) {
 	fake := newFakeDocker(t)
-	fake.output = "hello\n"
-	pool := newTestPool(t, fake, Options{})
+	pool, ctx := bound(t, fake, "task-1")
 
-	first := conversation.WithKey(context.Background(), "chat-1")
-	if _, err := pool.Run(first, "echo hello"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if _, err := pool.Run(first, "echo again"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	created := 0
-	for _, request := range fake.seen() {
-		if request == "POST /containers/create" {
-			created++
+	body := fake.body("POST /containers/create")
+	for _, want := range []string{
+		`"Binds":["/host/checkout:/workspaces/checkout"]`,
+		`"WorkingDir":"/workspaces/checkout"`,
+		`"Image":"` + testImage + `"`,
+		`"Entrypoint":["sh","-c",`,
+		label,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the container was created without %s: %s", want, body)
 		}
 	}
-	if created != 1 {
-		t.Errorf("%d containers were created for one conversation, want 1", created)
+	if strings.Contains(body, "NetworkMode") {
+		t.Errorf("the container was cut off the network: %s", body)
 	}
 
-	second := conversation.WithKey(context.Background(), "chat-2")
-	if _, err := pool.Run(second, "echo hello"); err != nil {
+	if _, err := pool.Run(ctx, "ls"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	created = 0
-	for _, request := range fake.seen() {
-		if request == "POST /containers/create" {
-			created++
-		}
+	if created := fake.count("POST /containers/create"); created != 1 {
+		t.Errorf("%d containers were created, want the bound one to be reused", created)
 	}
-	if created != 2 {
-		t.Errorf("a second conversation got %d containers in total, want 2", created)
+
+	if err := pool.Bind(context.Background(), "task-1", imageConfig()); err == nil {
+		t.Error("a second container was bound to the same conversation")
 	}
 }
 
-func TestPoolStartsAContainerWithoutANetwork(t *testing.T) {
+func TestBindKeepsConversationsApart(t *testing.T) {
 	fake := newFakeDocker(t)
 	pool := newTestPool(t, fake, Options{})
 
-	if _, err := pool.Run(context.Background(), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
+	for _, key := range []string{"task-1", "task-2"} {
+		if err := pool.Bind(context.Background(), key, imageConfig()); err != nil {
+			t.Fatalf("Bind %s: %v", key, err)
+		}
+	}
+	if created := fake.count("POST /containers/create"); created != 2 {
+		t.Errorf("%d containers were created, want one for each conversation", created)
+	}
+}
+
+func TestPoolRefusesAConversationWithNoContainer(t *testing.T) {
+	fake := newFakeDocker(t)
+	pool := newTestPool(t, fake, Options{})
+	ctx := conversation.WithKey(context.Background(), "chat-1")
+
+	if _, err := pool.Run(ctx, "true"); err == nil {
+		t.Error("expected an error from Run")
+	}
+	if _, err := pool.ReadFile(ctx, "a.txt"); err == nil {
+		t.Error("expected an error from ReadFile")
+	}
+	if err := pool.WriteFile(ctx, "a.txt", "x"); err == nil {
+		t.Error("expected an error from WriteFile")
+	}
+	if _, _, err := pool.Exec(ctx, []string{"true"}); err == nil {
+		t.Error("expected an error from Exec")
+	}
+	if fake.asked("POST /containers/create") {
+		t.Error("a conversation with no dev container got a container")
+	}
+}
+
+func TestBindSetsTheUserAndTheEnvironment(t *testing.T) {
+	fake := newFakeDocker(t)
+	fake.env = []string{"PATH=/usr/bin"}
+	pool := newTestPool(t, fake, Options{})
+
+	config := imageConfig()
+	config.ContainerUser = "root"
+	config.ContainerEnv = map[string]string{"GOFLAGS": "-mod=mod"}
+	config.RemoteUser = "vscode"
+	config.RemoteEnv = map[string]string{"PATH": "${containerEnv:PATH}:/go/bin"}
+	if err := pool.Bind(context.Background(), "task-1", config); err != nil {
+		t.Fatalf("Bind: %v", err)
 	}
 
-	body := fake.body("POST /containers/create")
-	if !strings.Contains(body, `"NetworkMode":"none"`) {
-		t.Errorf("the container can reach the network: %s", body)
+	create := fake.body("POST /containers/create")
+	if !strings.Contains(create, `"Env":["GOFLAGS=-mod=mod"]`) || !strings.Contains(create, `"User":"root"`) {
+		t.Errorf("create = %s", create)
 	}
-	if !strings.Contains(body, label) {
-		t.Errorf("the container carries no label: %s", body)
+
+	if _, _, err := pool.Exec(conversation.WithKey(context.Background(), "task-1"), []string{"go", "env"}); err != nil {
+		t.Fatalf("Exec: %v", err)
 	}
-	if !strings.Contains(body, `"WorkingDir":"`+workDir+`"`) {
-		t.Errorf("the working directory is wrong: %s", body)
+	exec := fake.body("POST /containers/container-1/exec")
+	if !strings.Contains(exec, `"User":"vscode"`) || !strings.Contains(exec, `"Env":["PATH=/usr/bin:/go/bin"]`) {
+		t.Errorf("exec = %s", exec)
+	}
+}
+
+func TestBindReportsAContainerThatWillNotStart(t *testing.T) {
+	for _, failing := range []string{"/containers/create", "/containers/container-1/start", "/containers/container-1/json"} {
+		t.Run(failing, func(t *testing.T) {
+			fake := newFakeDocker(t)
+			pool := newTestPool(t, fake, Options{})
+			fake.fail = failing
+
+			config := imageConfig()
+			config.RemoteEnv = map[string]string{"A": "b"}
+			if err := pool.Bind(context.Background(), "task-1", config); err == nil {
+				t.Fatal("expected an error")
+			}
+			if failing != "/containers/create" && !fake.asked("DELETE /containers/container-1") {
+				t.Errorf("a container that failed to start was kept: %#v", fake.seen())
+			}
+			fake.fail = ""
+			if err := pool.Bind(context.Background(), "task-1", imageConfig()); err != nil {
+				t.Errorf("the failed bind held on to the conversation: %v", err)
+			}
+		})
 	}
 }
 
 func TestPoolCloseThrowsTheContainerAway(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-	ctx := conversation.WithKey(context.Background(), "chat-1")
+	pool, ctx := bound(t, fake, "task-1")
 
-	if _, err := pool.Run(ctx, "true"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if err := pool.Close(ctx, "chat-1"); err != nil {
+	if err := pool.Close(ctx, "task-1"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if !fake.asked("DELETE /containers/container-1") {
 		t.Errorf("the container was kept: %#v", fake.seen())
 	}
+	if _, err := pool.Run(ctx, "true"); err == nil {
+		t.Error("a closed conversation still reached a container")
+	}
 
 	// Closing a conversation that has no container is not an error.
 	if err := pool.Close(ctx, "never-started"); err != nil {
 		t.Errorf("Close of an unknown conversation: %v", err)
-	}
-
-	// The next message starts a new container.
-	if _, err := pool.Run(ctx, "true"); err != nil {
-		t.Fatalf("Run after Close: %v", err)
-	}
-	created := 0
-	for _, request := range fake.seen() {
-		if request == "POST /containers/create" {
-			created++
-		}
-	}
-	if created != 2 {
-		t.Errorf("%d containers were created, want a new one after Close", created)
 	}
 }
 
@@ -167,8 +189,8 @@ func TestPoolReapsAContainerThatWentQuiet(t *testing.T) {
 	fake := newFakeDocker(t)
 	pool := newTestPool(t, fake, Options{Idle: 20 * time.Millisecond})
 
-	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-1"), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
+	if err := pool.Bind(context.Background(), "task-1", imageConfig()); err != nil {
+		t.Fatalf("Bind: %v", err)
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -183,99 +205,17 @@ func TestPoolReapsAContainerThatWentQuiet(t *testing.T) {
 
 func TestPoolShutdownRemovesEverythingItStarted(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
+	pool, _ := bound(t, fake, "task-1")
 
-	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-1"), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
 	pool.Shutdown(context.Background())
-
 	if !fake.asked("DELETE /containers/container-1") {
 		t.Errorf("a container survived the shutdown: %#v", fake.seen())
 	}
 
 	// A daemon that refuses is reported and does not stop the shutdown.
-	fake.fail = "/containers/container-1"
-	if _, err := pool.Run(conversation.WithKey(context.Background(), "chat-2"), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	pool.Shutdown(context.Background())
-}
-
-func TestPoolReportsAContainerThatWillNotStart(t *testing.T) {
-	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-	fake.fail = "/containers/create"
-
-	if _, err := pool.Run(context.Background(), "true"); err == nil {
-		t.Error("expected an error from Run")
-	}
-	if _, err := pool.ReadFile(context.Background(), "a.txt"); err == nil {
-		t.Error("expected an error from ReadFile")
-	}
-	if err := pool.WriteFile(context.Background(), "a.txt", "x"); err == nil {
-		t.Error("expected an error from WriteFile")
-	}
-}
-
-func TestAConversationWithNoNameStillGetsAContainer(t *testing.T) {
-	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-
-	if _, err := pool.Run(context.Background(), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if err := pool.Close(context.Background(), conversation.Default); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	if !fake.asked("DELETE /containers/container-1") {
-		t.Errorf("an unnamed conversation got no container: %#v", fake.seen())
-	}
-}
-
-func TestBindStartsAContainerOnAHostDirectory(t *testing.T) {
-	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-	ctx := context.Background()
-
-	if err := pool.Bind(ctx, "task-1", "/host/checkout"); err != nil {
+	if err := pool.Bind(context.Background(), "task-2", devcontainer.Config{Image: testImage, Root: "/host/other"}); err != nil {
 		t.Fatalf("Bind: %v", err)
 	}
-
-	body := fake.body("POST /containers/create")
-	if !strings.Contains(body, `"Binds":["/host/checkout:`+workDir+`"]`) {
-		t.Errorf("the checkout was not mounted: %s", body)
-	}
-	if !strings.Contains(body, `"NetworkMode":"none"`) {
-		t.Errorf("a bound container reached the network: %s", body)
-	}
-
-	// The tools of that run reach the same container.
-	if _, err := pool.Run(conversation.WithKey(ctx, "task-1"), "ls"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	created := 0
-	for _, request := range fake.seen() {
-		if request == "POST /containers/create" {
-			created++
-		}
-	}
-	if created != 1 {
-		t.Errorf("%d containers were created, want the bound one to be reused", created)
-	}
-
-	// One conversation has one container, so a second bind is a mistake.
-	if err := pool.Bind(ctx, "task-1", "/host/checkout"); err == nil {
-		t.Error("a second container was bound to the same conversation")
-	}
-}
-
-func TestBindReportsAContainerThatWillNotStart(t *testing.T) {
-	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-	fake.fail = "/containers/create"
-
-	if err := pool.Bind(context.Background(), "task-1", "/host/checkout"); err == nil {
-		t.Fatal("expected an error")
-	}
+	fake.fail = "/containers/container-1"
+	pool.Shutdown(context.Background())
 }

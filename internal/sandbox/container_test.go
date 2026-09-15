@@ -3,7 +3,6 @@ package sandbox
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -12,8 +11,7 @@ import (
 func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 	fake := newFakeDocker(t)
 	fake.output = "README.md\ngo.mod\n"
-	pool := newTestPool(t, fake, Options{})
-	ctx := context.Background()
+	pool, ctx := bound(t, fake, "task-1")
 
 	got, err := pool.Run(ctx, "ls")
 	if err != nil {
@@ -42,14 +40,31 @@ func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 	if !strings.Contains(got, "[exit status 2]") {
 		t.Errorf("output = %q", got)
 	}
+
+	output, code, err := pool.Exec(ctx, []string{"false"})
+	if err != nil || code != 2 || strings.Contains(output, "exit status") {
+		t.Errorf("Exec = %q, %d, %v, want the code apart from the output", output, code, err)
+	}
+}
+
+func TestContainerRunReportsAnExecThatFails(t *testing.T) {
+	for _, failing := range []string{"/containers/container-1/exec", "/exec/exec-1/start", "/exec/exec-1/json"} {
+		t.Run(failing, func(t *testing.T) {
+			fake := newFakeDocker(t)
+			pool, ctx := bound(t, fake, "task-1")
+			fake.fail = failing
+			if _, err := pool.Run(ctx, "ls"); err == nil {
+				t.Error("expected an error")
+			}
+		})
+	}
 }
 
 func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 	fake := newFakeDocker(t)
-	fake.files["/work/go.mod"] = "module example\n"
+	fake.files["/workspaces/checkout/go.mod"] = "module example\n"
 	fake.files["/etc/hosts"] = "127.0.0.1 localhost\n"
-	pool := newTestPool(t, fake, Options{})
-	ctx := context.Background()
+	pool, ctx := bound(t, fake, "task-1")
 
 	got, err := pool.ReadFile(ctx, "go.mod")
 	if err != nil {
@@ -76,32 +91,32 @@ func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 
 func TestContainerReadFileReportsAnEmptyArchive(t *testing.T) {
 	fake := newFakeDocker(t)
-	fake.files["/work/empty"] = ""
-	pool := newTestPool(t, fake, Options{})
+	fake.files["/workspaces/checkout/empty"] = ""
+	pool, ctx := bound(t, fake, "task-1")
 
 	// A directory answers with an archive that holds no regular file.
 	fake.onlyDirectories = true
-	if _, err := pool.ReadFile(context.Background(), "empty"); err == nil {
+	if _, err := pool.ReadFile(ctx, "empty"); err == nil {
 		t.Error("expected an error for an archive with no file in it")
 	}
 }
 
 func TestContainerWriteFileSendsATarAndMakesTheDirectory(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
+	pool, ctx := bound(t, fake, "task-1")
 
-	if err := pool.WriteFile(context.Background(), "pkg/hello.go", "package pkg\n"); err != nil {
+	if err := pool.WriteFile(ctx, "pkg/hello.go", "package pkg\n"); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	// The archive endpoint extracts into a directory that must already be
 	// there, so the write makes it first.
 	exec := fake.body("POST /containers/container-1/exec")
-	if !strings.Contains(exec, "mkdir -p '/work/pkg'") {
+	if !strings.Contains(exec, "mkdir -p '/workspaces/checkout/pkg'") {
 		t.Errorf("the parent directory was not made: %s", exec)
 	}
 
-	sent := fake.files["/work/pkg"]
+	sent := fake.files["/workspaces/checkout/pkg"]
 	reader := tar.NewReader(strings.NewReader(sent))
 	header, err := reader.Next()
 	if err != nil {
@@ -118,19 +133,16 @@ func TestContainerWriteFileSendsATarAndMakesTheDirectory(t *testing.T) {
 
 func TestContainerWriteFileReportsAFailedDirectory(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
-	if _, err := pool.Run(context.Background(), "true"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	pool, ctx := bound(t, fake, "task-1")
 
 	fake.fail = "/containers/container-1/exec"
-	if err := pool.WriteFile(context.Background(), "pkg/hello.go", "x"); err == nil {
+	if err := pool.WriteFile(ctx, "pkg/hello.go", "x"); err == nil {
 		t.Error("expected an error when the directory could not be made")
 	}
 }
 
 func TestResolveReadsAPathAgainstTheWorkingDirectory(t *testing.T) {
-	container := &Container{dir: workDir}
+	container := &Container{dir: "/work"}
 
 	for name, want := range map[string]string{
 		"go.mod":       "/work/go.mod",
@@ -157,14 +169,5 @@ func TestJSONBodyFallsBackWhenTheValueCannotBeEncoded(t *testing.T) {
 	}
 	if !bytes.Equal(body, []byte("{}")) {
 		t.Errorf("body = %s", body)
-	}
-}
-
-func TestShortIDLeavesAShortIDAlone(t *testing.T) {
-	if got := shortID("abc"); got != "abc" {
-		t.Errorf("shortID = %q", got)
-	}
-	if got := shortID(strings.Repeat("a", 64)); len(got) != 12 {
-		t.Errorf("shortID = %q", got)
 	}
 }

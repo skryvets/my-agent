@@ -10,6 +10,7 @@ import (
 
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/conversation"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
 // fakeAgent stands in for the model. It writes into the checkout the way the
@@ -60,8 +61,8 @@ func (f *fakeAgent) checkout() string {
 		return ""
 	}
 	bound, _ := f.box.seen()
-	for _, dir := range bound {
-		return dir
+	for _, config := range bound {
+		return config.Root
 	}
 	return ""
 }
@@ -72,26 +73,50 @@ func (f *fakeAgent) seen() (keys, told []string) {
 	return append([]string(nil), f.keys...), append([]string(nil), f.told...)
 }
 
-// fakeSandbox records the container a run asked for.
+// fakeSandbox records the container a run asked for and the commands it ran
+// there.
 type fakeSandbox struct {
 	mu     sync.Mutex
-	bound  map[string]string
+	bound  map[string]devcontainer.Config
 	closed []string
+	ran    [][]string
 	err    error
+	// exit answers a command whose first argument it names with that code.
+	exit    map[string]int
+	execErr error
 }
 
 func newFakeSandbox() *fakeSandbox {
-	return &fakeSandbox{bound: map[string]string{}}
+	return &fakeSandbox{bound: map[string]devcontainer.Config{}}
 }
 
-func (f *fakeSandbox) Bind(ctx context.Context, key, dir string) error {
+func (f *fakeSandbox) Bind(ctx context.Context, key string, config devcontainer.Config) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
 		return f.err
 	}
-	f.bound[key] = dir
+	f.bound[key] = config
 	return nil
+}
+
+func (f *fakeSandbox) Exec(ctx context.Context, args []string) (string, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ran = append(f.ran, append([]string{conversation.KeyOf(ctx)}, args...))
+	if f.execErr != nil {
+		return "", 0, f.execErr
+	}
+	if code := f.exit[args[0]]; code != 0 {
+		return "the setup broke", code, nil
+	}
+	return "", 0, nil
+}
+
+func (f *fakeSandbox) commands() [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]string(nil), f.ran...)
 }
 
 func (f *fakeSandbox) Close(ctx context.Context, key string) error {
@@ -101,12 +126,12 @@ func (f *fakeSandbox) Close(ctx context.Context, key string) error {
 	return nil
 }
 
-func (f *fakeSandbox) seen() (bound map[string]string, closed []string) {
+func (f *fakeSandbox) seen() (bound map[string]devcontainer.Config, closed []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	bound = map[string]string{}
-	for key, dir := range f.bound {
-		bound[key] = dir
+	bound = map[string]devcontainer.Config{}
+	for key, config := range f.bound {
+		bound[key] = config
 	}
 	return bound, append([]string(nil), f.closed...)
 }

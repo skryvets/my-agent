@@ -120,7 +120,7 @@ func newTestBot(fake *fakeTelegram, answer func(agent.History) (agent.Message, e
 		agent:     fakeAgent{answer: answer},
 		retryBase: time.Millisecond,
 		sessions:  map[int64]chan string{},
-		waiting:   map[string]chan bool{},
+		working:   map[int64]context.CancelFunc{},
 	}
 }
 
@@ -131,24 +131,4 @@ func textUpdate(id, userID, chatID int64, text string) update {
 	msg.Chat.ID = chatID
 	msg.Chat.Type = "private"
 	return update{UpdateID: id, Message: msg}
-}
-
-// fakeSandbox records the chats whose workspace the bot threw away.
-type fakeSandbox struct {
-	mu     sync.Mutex
-	closed []string
-	err    error
-}
-
-func (f *fakeSandbox) Close(ctx context.Context, key string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = append(f.closed, key)
-	return f.err
-}
-
-func (f *fakeSandbox) seen() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.closed...)
 }

@@ -188,7 +188,7 @@ resource "coder_app" "chat" {
   slug         = "chat"
   display_name = "Terminal chat"
   icon         = "/icon/terminal.svg"
-  command      = "cd ${local.project_dir} && go run ."
+  command      = "cd ${local.project_dir} && go run . -cli"
   order        = 2
 }
 

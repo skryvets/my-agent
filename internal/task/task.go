@@ -3,8 +3,8 @@
 // pull request.
 //
 // git and the GitHub API run in the agent process, not in the container. The
-// model therefore never sees the token and needs no network, and the two
-// steps that leave the machine are made by code rather than by the model.
+// model therefore never sees the token, and the two steps that publish the
+// change are made by code rather than by the model.
 package task
 
 import (
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
 // started counts the runs of this process, so two runs of one second still
@@ -29,10 +30,11 @@ type Agent interface {
 	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
 }
 
-// Sandbox lends a container that works on a directory of the host.
-// *sandbox.Pool satisfies it.
+// Sandbox starts the dev container of a checkout on the host and runs the
+// commands that set it up. *sandbox.Pool satisfies it.
 type Sandbox interface {
-	Bind(ctx context.Context, key, dir string) error
+	Bind(ctx context.Context, key string, config devcontainer.Config) error
+	Exec(ctx context.Context, args []string) (output string, code int, err error)
 	Close(ctx context.Context, key string) error
 }
 
@@ -83,14 +85,14 @@ func (r *Runner) Start(ctx context.Context, chat, repository, instruction string
 	run.Branch = branchName(run.ID)
 	r.save(run)
 
-	dir, err := r.checkout(run.ID)
+	dir, err := r.checkout(run.ID, repo)
 	if err != nil {
-		return r.fail(run, err)
+		return r.fail(ctx, run, err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(filepath.Dir(dir))
 
 	if err := r.work(ctx, &run, repo, dir, report); err != nil {
-		return r.fail(run, err)
+		return r.fail(ctx, run, err)
 	}
 	return nil
 }
@@ -117,17 +119,19 @@ func (r *Runner) Interrupted(ctx context.Context) []Run {
 	return lost
 }
 
-// checkout makes the directory the clone goes into.
-func (r *Runner) checkout(id string) (string, error) {
+// checkout names the directory the clone goes into. The last part is the name
+// of the repository, because a dev container names its workspace after it.
+func (r *Runner) checkout(id string, repo Repo) (string, error) {
 	root := r.WorkRoot
 	if root == "" {
 		root = os.TempDir()
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	run := filepath.Join(root, "my-agent-"+id)
+	if err := os.MkdirAll(run, 0o755); err != nil {
 		return "", err
 	}
 	// git clone wants a directory that is not there yet.
-	return filepath.Join(root, "my-agent-"+id), nil
+	return filepath.Join(run, repo.Name), nil
 }
 
 func (r *Runner) save(run Run) {
@@ -137,9 +141,15 @@ func (r *Runner) save(run Run) {
 	}
 }
 
-func (r *Runner) fail(run Run, err error) error {
+// fail records how a run ended. A run whose context ended was stopped from
+// the chat, and the error it gave on the way out says nothing more.
+func (r *Runner) fail(ctx context.Context, run Run, err error) error {
 	run.State = Failed
 	run.Detail = err.Error()
+	if ctx.Err() != nil {
+		run.State = Stopped
+		run.Detail = "stopped from the chat"
+	}
 	run.Ended = time.Now().UTC()
 	r.save(run)
 	return err

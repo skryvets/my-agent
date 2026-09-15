@@ -31,3 +31,13 @@ func (p *Pool) WriteFile(ctx context.Context, name, content string) error {
 	}
 	return container.WriteFile(ctx, name, content)
 }
+
+// Exec runs one program in the container of the conversation and returns the
+// exit code apart from the output, for a caller that must know it failed.
+func (p *Pool) Exec(ctx context.Context, args []string) (string, int, error) {
+	container, err := p.container(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	return container.Exec(ctx, args)
+}

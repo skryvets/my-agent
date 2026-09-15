@@ -29,20 +29,21 @@ func (r *Runner) work(ctx context.Context, run *Run, repo Repo, dir string, repo
 		return err
 	}
 
-	// The container works on the checkout through a bind, so it needs no
-	// network and never sees the token.
+	// The container works on the checkout through a bind, so it never sees
+	// the token.
 	key := "task-" + run.ID
-	if err := r.Sandbox.Bind(ctx, key, dir); err != nil {
+	defer r.release(ctx, key)
+	config, err := r.prepare(ctx, key, dir, report)
+	if err != nil {
 		return err
 	}
-	defer r.Sandbox.Close(context.WithoutCancel(ctx), key)
 
 	run.State = Working
 	r.save(*run)
 	report("Working on it")
 
 	inside := conversation.WithKey(ctx, key)
-	summary, err := r.think(inside, repo, run)
+	summary, err := r.think(inside, repo, run, config.Workspace())
 	if err != nil {
 		return err
 	}
@@ -93,15 +94,15 @@ func (r *Runner) work(ctx context.Context, run *Run, repo Repo, dir string, repo
 // think lets the model do the work inside the container. It is told not to
 // touch git, because the branch, the commit and the pull request are made
 // with a token it must never see.
-func (r *Runner) think(ctx context.Context, repo Repo, run *Run) (string, error) {
+func (r *Runner) think(ctx context.Context, repo Repo, run *Run, workspace string) (string, error) {
 	instruction := fmt.Sprintf(
-		"You are working in /work, a checkout of %s on the branch %s.\n\n"+
+		"You are working in %s, a checkout of %s on the branch %s, inside its dev container.\n\n"+
 			"Do this: %s\n\n"+
 			"Look around with the shell first. Change the files you need to change, "+
 			"and run the tests of the project before you finish. "+
 			"Do not run git: the branch, the commit and the pull request are made for you. "+
 			"When you are done, answer with a short summary of what you changed and why.",
-		repo, run.Branch, run.Instruction)
+		workspace, repo, run.Branch, run.Instruction)
 
 	answer, err := r.Agent.Chat(ctx, agent.History(nil).WithUser(instruction), io.Discard)
 	if err != nil {

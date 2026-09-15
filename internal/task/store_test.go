@@ -140,9 +140,13 @@ func TestSubjectAndBodyStayReadable(t *testing.T) {
 
 func TestCheckoutFallsBackToTheTemporaryDirectory(t *testing.T) {
 	runner := &Runner{}
-	dir, err := runner.checkout("20260101-000001-1")
+	dir, err := runner.checkout("20260101-000001-1", Repo{Owner: "skryvets", Name: "my-agent"})
 	if err != nil {
 		t.Fatalf("checkout: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Dir(dir)) })
+	if filepath.Base(dir) != "my-agent" {
+		t.Errorf("checkout = %q, want it named after the repository", dir)
 	}
 	if !strings.HasPrefix(dir, os.TempDir()) {
 		t.Errorf("checkout = %q, want one under %q", dir, os.TempDir())

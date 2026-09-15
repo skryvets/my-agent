@@ -29,20 +29,8 @@ func (e *Error) Error() string {
 }
 
 type update struct {
-	UpdateID      int64          `json:"update_id"`
-	Message       *message       `json:"message"`
-	CallbackQuery *callbackQuery `json:"callback_query"`
-}
-
-// callbackQuery is a press of one button under a message the bot sent.
-type callbackQuery struct {
-	ID   string `json:"id"`
-	Data string `json:"data"`
-	From struct {
-		ID       int64  `json:"id"`
-		Username string `json:"username"`
-	} `json:"from"`
-	Message *message `json:"message"`
+	UpdateID int64    `json:"update_id"`
+	Message  *message `json:"message"`
 }
 
 type message struct {
@@ -56,11 +44,4 @@ type message struct {
 		Type string `json:"type"`
 	} `json:"chat"`
 	Text string `json:"text"`
-}
-
-// button is one key of an inline keyboard. callback_data is capped at 64
-// bytes by the Bot API, so it carries an id and nothing else.
-type button struct {
-	Text string `json:"text"`
-	Data string `json:"callback_data"`
 }

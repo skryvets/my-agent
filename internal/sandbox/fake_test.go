@@ -3,6 +3,7 @@ package sandbox
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/skryvets/my-agent/internal/conversation"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 )
+
+const testImage = "golang:1.26"
 
 // fakeDocker is an Engine API daemon that answers over a unix socket and
 // records what it was asked, so no test needs a real Docker.
@@ -23,6 +29,7 @@ type fakeDocker struct {
 	mu       sync.Mutex
 	requests []string
 	bodies   map[string]string
+	queries  map[string]string
 
 	// images is what the daemon already has, so a pull is only asked for
 	// when it is missing.
@@ -39,6 +46,11 @@ type fakeDocker struct {
 	// onlyDirectories answers a file read with an archive that holds no
 	// regular file, which is what reading a directory gives.
 	onlyDirectories bool
+	// pullStream and buildStream are the progress the daemon streams back.
+	pullStream  string
+	buildStream string
+	// env is what the container reports it was started with.
+	env []string
 }
 
 func newFakeDocker(t *testing.T) *fakeDocker {
@@ -53,10 +65,13 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
 	fake := &fakeDocker{
-		socket: filepath.Join(dir, "d.sock"),
-		bodies: map[string]string{},
-		images: map[string]bool{DefaultImage: true},
-		files:  map[string]string{},
+		socket:      filepath.Join(dir, "d.sock"),
+		bodies:      map[string]string{},
+		queries:     map[string]string{},
+		images:      map[string]bool{testImage: true},
+		files:       map[string]string{},
+		pullStream:  `{"status":"Pulling"}` + "\n",
+		buildStream: `{"stream":"Step 1/1 : FROM golang\n"}` + "\n" + `{"aux":{"ID":"sha256:built"}}` + "\n",
 	}
 
 	listener, err := net.Listen("unix", fake.socket)
@@ -78,6 +93,7 @@ func (f *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, r.Method+" "+path)
 	f.bodies[r.Method+" "+path] = string(body)
+	f.queries[r.Method+" "+path] = r.URL.RawQuery
 	failing := f.fail
 	f.mu.Unlock()
 
@@ -95,11 +111,17 @@ func (f *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/images/") && strings.HasSuffix(path, "/json"):
 		f.writeImage(w, path)
 	case path == "/images/create":
-		fmt.Fprint(w, `{"status":"Pulling"}`)
+		fmt.Fprint(w, f.stream(&f.pullStream))
+	case path == "/build":
+		fmt.Fprint(w, f.stream(&f.buildStream))
 	case path == "/containers/create":
 		fmt.Fprint(w, `{"Id":"container-1"}`)
 	case strings.HasSuffix(path, "/start") && strings.HasPrefix(path, "/containers/"):
 		w.WriteHeader(http.StatusNoContent)
+	case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
+		f.mu.Lock()
+		fmt.Fprintf(w, `{"Config":{"Env":["%s"]}}`, strings.Join(f.env, `","`))
+		f.mu.Unlock()
 	case strings.HasSuffix(path, "/exec"):
 		fmt.Fprint(w, `{"Id":"exec-1"}`)
 	case path == "/exec/exec-1/start":
@@ -114,6 +136,12 @@ func (f *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, `{"message":"no route for %s"}`, path)
 	}
+}
+
+func (f *fakeDocker) stream(field *string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return *field
 }
 
 func (f *fakeDocker) writeOrphans(w http.ResponseWriter) {
@@ -205,8 +233,54 @@ func (f *fakeDocker) asked(want string) bool {
 	return false
 }
 
+func (f *fakeDocker) count(want string) int {
+	count := 0
+	for _, request := range f.seen() {
+		if request == want {
+			count++
+		}
+	}
+	return count
+}
+
 func (f *fakeDocker) body(request string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.bodies[request]
+}
+
+func (f *fakeDocker) query(request string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.queries[request]
+}
+
+func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
+	t.Helper()
+	options.Socket = fake.socket
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	pool, err := New(ctx, options)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return pool
+}
+
+// imageConfig is a dev container that names an image, on a checkout called
+// checkout, so its workspace is /workspaces/checkout.
+func imageConfig() devcontainer.Config {
+	return devcontainer.Config{Image: testImage, Root: "/host/checkout"}
+}
+
+// bound is a pool with one container for key, and the context that reaches it.
+func bound(t *testing.T, fake *fakeDocker, key string) (*Pool, context.Context) {
+	t.Helper()
+	pool := newTestPool(t, fake, Options{})
+	if err := pool.Bind(context.Background(), key, imageConfig()); err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	return pool, conversation.WithKey(context.Background(), key)
 }

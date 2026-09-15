@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/skryvets/my-agent/internal/agent"
-	"github.com/skryvets/my-agent/internal/conversation"
 )
 
 const (
@@ -30,12 +29,16 @@ func (b *Bot) dispatch(ctx context.Context, u update) {
 		log.Printf("ignoring message from user %d (@%s)", msg.From.ID, msg.From.Username)
 		return
 	}
+	if commandName(msg.Text) == "/stop" {
+		b.stop(ctx, msg.Chat.ID)
+		return
+	}
 
 	queue := b.session(ctx, msg.Chat.ID)
 	select {
 	case queue <- msg.Text:
 	default:
-		b.reply(ctx, msg.Chat.ID, "I am still working on your previous messages, try again in a moment.")
+		b.reply(ctx, msg.Chat.ID, "I am still working on your previous messages, try again in a moment. /stop drops them.")
 	}
 }
 
@@ -57,86 +60,79 @@ func (b *Bot) session(ctx context.Context, chatID int64) chan string {
 // serve owns the history for one chat, so no lock is needed around it.
 func (b *Bot) serve(ctx context.Context, chatID int64, queue <-chan string) {
 	var history agent.History
-
-	// The tools and the questions they raise both belong to this chat, and
-	// find it through the context.
-	ctx = conversation.WithKey(ctx, chatKey(chatID))
-
 	for {
-		var text string
 		select {
 		case <-ctx.Done():
 			return
-		case text = <-queue:
+		case text := <-queue:
+			history = b.handle(ctx, chatID, history, text)
 		}
-
-		if handled, cleared := b.command(ctx, chatID, text); handled {
-			if cleared {
-				history = nil
-			}
-			continue
-		}
-
-		history = history.WithUser(text)
-		if err := b.client.sendChatAction(ctx, chatID, "typing"); err != nil {
-			log.Printf("sendChatAction: %v", err)
-		}
-
-		assistant, err := b.agent.Chat(ctx, history, io.Discard)
-		if err != nil {
-			log.Printf("chat: %v", err)
-			history = history.DropLast()
-			b.reply(ctx, chatID, "That turn failed: "+err.Error())
-			continue
-		}
-
-		history = history.WithAssistant(assistant).Trim(historyTurns * 2)
-		b.reply(ctx, chatID, assistant.Content)
 	}
+}
+
+// handle answers one message and returns the history after it. ctx lives as
+// long as the bot and carries the replies. work lives as long as this message
+// and ends early on /stop.
+func (b *Bot) handle(ctx context.Context, chatID int64, history agent.History, text string) agent.History {
+	work, done := b.begin(ctx, chatID)
+	defer done()
+
+	if handled, cleared := b.command(ctx, work, chatID, text); handled {
+		if cleared {
+			return nil
+		}
+		return history
+	}
+
+	history = history.WithUser(text)
+	if err := b.client.sendChatAction(ctx, chatID, "typing"); err != nil {
+		log.Printf("sendChatAction: %v", err)
+	}
+	assistant, err := b.agent.Chat(work, history, io.Discard)
+	if err != nil {
+		if work.Err() == nil {
+			log.Printf("chat: %v", err)
+			b.reply(ctx, chatID, "That turn failed: "+err.Error())
+		}
+		return history.DropLast()
+	}
+	b.reply(ctx, chatID, assistant.Content)
+	return history.WithAssistant(assistant).Trim(historyTurns * 2)
 }
 
 // command answers a slash command, reporting whether it handled the message and
 // whether the conversation should be cleared.
-func (b *Bot) command(ctx context.Context, chatID int64, text string) (handled, cleared bool) {
-	name, _, _ := strings.Cut(strings.TrimSpace(text), " ")
-	switch name {
+func (b *Bot) command(ctx, work context.Context, chatID int64, text string) (handled, cleared bool) {
+	switch commandName(text) {
 	case "/start", "/help":
 		b.reply(ctx, chatID, b.help())
 		return true, false
 	case "/reset":
-		b.forget(ctx, chatID)
 		b.reply(ctx, chatID, "Conversation cleared.")
 		return true, true
 	case "/task":
-		b.task(ctx, chatID, text)
+		b.task(ctx, work, chatID, text)
 		return true, false
 	}
 	return false, false
 }
 
-// forget throws away the workspace of one chat, so /reset loses the files the
-// agent wrote as well as the conversation.
-func (b *Bot) forget(ctx context.Context, chatID int64) {
-	if b.sandbox == nil {
-		return
-	}
-	if err := b.sandbox.Close(ctx, chatKey(chatID)); err != nil {
-		log.Printf("closing the workspace of chat %d: %v", chatID, err)
-	}
+func commandName(text string) string {
+	name, _, _ := strings.Cut(strings.TrimSpace(text), " ")
+	return name
 }
 
 func chatKey(chatID int64) string { return strconv.FormatInt(chatID, 10) }
 
 func (b *Bot) help() string {
-	reset := "/reset - forget this conversation\n"
-	if b.sandbox != nil {
-		reset = "/reset - forget this conversation and throw away its workspace\n"
-	}
 	help := "Send me a message and I will answer with " + b.agent.Model() + ".\n\n"
 	if b.tasks != nil {
-		help += "/task owner/name what to change - change a repository and open a pull request\n"
+		help += "/task owner/name what to change - change a repository in its dev container and open a pull request\n"
 	}
-	return help + reset + "/help - show this message"
+	return help +
+		"/stop - stop what I am doing in this chat and drop the messages that wait\n" +
+		"/reset - forget this conversation\n" +
+		"/help - show this message"
 }
 
 func (b *Bot) reply(ctx context.Context, chatID int64, text string) {
