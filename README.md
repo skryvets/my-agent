@@ -269,14 +269,28 @@ The bot has no HTTP server, so it needs no port. `/task` needs a Docker daemon
 the agent can reach at `/var/run/docker.sock`, so the bot runs on a machine
 with Docker: a VM or a server, not a platform that gives a service no socket.
 
+On an Ubuntu server with Go, git and Docker Engine, run the script from the
+checkout:
+
 ```sh
-go build -o my-agent .
-./my-agent
+git pull
+./deploy/deploy.sh
 ```
 
-Run it under a supervisor that restarts it, with the variables above. Only one
-instance may poll `getUpdates` at a time, so keep it to one. Point `-state` at
-a directory that survives a restart.
+The first run writes `/etc/my-agent/env` with empty variables and stops. Fill
+in the variables above, then run the script again. Each run then:
+
+1. builds the binary, so a build that fails leaves the running bot alone
+2. creates the system user `my-agent` once
+3. stops the `my-agent` service, which ends the running tasks and removes their containers
+4. installs the binary to `/usr/local/bin/my-agent` and `deploy/my-agent.service` to `/etc/systemd/system/`
+5. enables and starts the service, and prints the log if it does not stay up
+
+The service runs as `my-agent` in the `docker` group, restarts when it exits,
+and keeps its runs in `/var/lib/my-agent/state`. Follow it with
+`journalctl -u my-agent -f`. Only one instance may poll `getUpdates` at a time,
+so run the service on one server only. Do not add `PrivateTmp=` to the unit,
+because the checkouts are in `/tmp` and the daemon must see them there.
 
 The daemon resolves the bind mount of a checkout on its own host. When the
 agent itself runs in a container with the socket mounted, set `TMPDIR` to a
