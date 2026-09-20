@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/skryvets/my-agent/internal/agent"
 )
 
@@ -20,9 +22,9 @@ const (
 )
 
 // dispatch drops what the bot will not answer and queues the rest.
-func (b *Bot) dispatch(ctx context.Context, u update) {
+func (b *Bot) dispatch(ctx context.Context, _ *bot.Bot, u *models.Update) {
 	msg := u.Message
-	if msg == nil || strings.TrimSpace(msg.Text) == "" {
+	if msg == nil || msg.From == nil || strings.TrimSpace(msg.Text) == "" {
 		return
 	}
 	if len(b.allowed) > 0 && !b.allowed[msg.From.ID] {
@@ -85,7 +87,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, history agent.History, t
 	}
 
 	history = history.WithUser(text)
-	if err := b.client.sendChatAction(ctx, chatID, "typing"); err != nil {
+	if _, err := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
+		ChatID: chatID,
+		Action: models.ChatActionTyping,
+	}); err != nil {
 		log.Printf("sendChatAction: %v", err)
 	}
 	assistant, err := b.agent.Chat(work, history, io.Discard)
@@ -135,8 +140,14 @@ func (b *Bot) help() string {
 		"/help - show this message"
 }
 
+// Telegram rejects a message over maxMessage characters, so a long answer goes
+// out in parts.
 func (b *Bot) reply(ctx context.Context, chatID int64, text string) {
-	if err := b.client.sendMessage(ctx, chatID, text); err != nil {
-		log.Printf("sendMessage: %v", err)
+	for _, part := range splitMessage(text, maxMessage) {
+		_, err := b.api.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: part})
+		if err != nil {
+			log.Printf("sendMessage: %v", err)
+			return
+		}
 	}
 }

@@ -1,8 +1,9 @@
 // Package telegram serves the agent as a Telegram bot, keeping one
 // conversation per chat.
 //
-// Run wires the bot from the environment. The bot itself is in bot.go, the
-// per-chat conversations in session.go, and the Bot API transport in client.go.
+// Run wires the bot from the environment. github.com/go-telegram/bot polls
+// getUpdates and speaks the Bot API; the per-chat conversations are in
+// session.go.
 package telegram
 
 import (
@@ -14,8 +15,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 
+	"github.com/go-telegram/bot"
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/task"
 )
@@ -33,6 +35,18 @@ type Tasks interface {
 	Interrupted(ctx context.Context) []task.Run
 }
 
+// Bot hands each message to the session of its chat.
+type Bot struct {
+	api     *bot.Bot
+	agent   Agent
+	tasks   Tasks
+	allowed map[int64]bool
+
+	mu       sync.Mutex
+	sessions map[int64]chan string
+	working  map[int64]context.CancelFunc
+}
+
 // Run reads the bot configuration from the environment and serves until ctx is
 // cancelled. A nil tasks answers /task with the reason it is off.
 func Run(ctx context.Context, model Agent, tasks Tasks) error {
@@ -48,19 +62,28 @@ func Run(ctx context.Context, model Agent, tasks Tasks) error {
 		log.Print("warning: TELEGRAM_ALLOWED_USERS is empty, anyone who finds the bot can spend your OpenRouter credits")
 	}
 
-	bot := &Bot{
-		client:    newClient(token),
-		agent:     model,
-		tasks:     tasks,
-		allowed:   allowed,
-		retryBase: time.Second,
-		sessions:  map[int64]chan string{},
-		working:   map[int64]context.CancelFunc{},
+	b := &Bot{
+		agent:    model,
+		tasks:    tasks,
+		allowed:  allowed,
+		sessions: map[int64]chan string{},
+		working:  map[int64]context.CancelFunc{},
 	}
-	bot.reportInterrupted(ctx)
-	if err := bot.run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	// The handlers are not async, so the updates of a chat reach its queue in
+	// the order they arrived. dispatch only queues, so nothing waits here.
+	b.api, err = bot.New(token,
+		bot.WithDefaultHandler(b.dispatch),
+		bot.WithAllowedUpdates(bot.AllowedUpdates{"message"}),
+		bot.WithNotAsyncHandlers(),
+		bot.WithErrorsHandler(func(err error) { log.Printf("telegram: %v", err) }),
+	)
+	if err != nil {
 		return err
 	}
+
+	log.Printf("telegram bot polling for updates, answering with %s", model.Model())
+	b.reportInterrupted(ctx)
+	b.api.Start(ctx)
 	return nil
 }
 

@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,14 +11,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/skryvets/my-agent/internal/agent"
 )
 
 type apiCall struct {
-	Method  string
-	Payload map[string]any
+	Method string
+	Form   map[string]string
 }
 
+// fakeTelegram answers the Bot API calls of one test and records them. The
+// library posts a multipart form, so the fields arrive as strings.
 type fakeTelegram struct {
 	server *httptest.Server
 
@@ -38,19 +41,23 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decoding %s payload: %v", method, err)
+		form := map[string]string{}
+		if err := r.ParseMultipartForm(1 << 20); err == nil {
+			for name, values := range r.MultipartForm.Value {
+				form[name] = values[0]
+			}
 		}
 
 		fake.mu.Lock()
-		fake.calls = append(fake.calls, apiCall{Method: method, Payload: payload})
+		fake.calls = append(fake.calls, apiCall{Method: method, Form: form})
 		reply, ok := fake.replies[method]
 		fake.mu.Unlock()
 
 		if method == "sendMessage" {
-			text, _ := payload["text"].(string)
-			fake.sent <- text
+			fake.sent <- form["text"]
+			if !ok {
+				reply, ok = `{"ok":true,"result":{"message_id":1}}`, true
+			}
 		}
 		if !ok {
 			reply = `{"ok":true,"result":true}`
@@ -76,12 +83,6 @@ func (f *fakeTelegram) methods() []string {
 		methods = append(methods, call.Method)
 	}
 	return methods
-}
-
-func (f *fakeTelegram) client() *client {
-	c := newClient("test-token")
-	c.baseURL = f.server.URL
-	return c
 }
 
 func (f *fakeTelegram) nextSent(t *testing.T) string {
@@ -115,18 +116,29 @@ func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (
 }
 
 func newTestBot(fake *fakeTelegram, answer func(agent.History) (agent.Message, error)) *Bot {
+	api, err := bot.New("test-token",
+		bot.WithServerURL(fake.server.URL),
+		bot.WithSkipGetMe(),
+		bot.WithNotAsyncHandlers(),
+	)
+	if err != nil {
+		panic(err)
+	}
 	return &Bot{
-		client:    fake.client(),
-		agent:     fakeAgent{answer: answer},
-		retryBase: time.Millisecond,
-		sessions:  map[int64]chan string{},
-		working:   map[int64]context.CancelFunc{},
+		api:      api,
+		agent:    fakeAgent{answer: answer},
+		sessions: map[int64]chan string{},
+		working:  map[int64]context.CancelFunc{},
 	}
 }
 
-func textUpdate(id, userID, chatID int64, text string) update {
-	msg := &message{Text: text}
-	msg.From.ID = userID
-	msg.Chat.ID = chatID
-	return update{UpdateID: id, Message: msg}
+func textUpdate(id, userID, chatID int64, text string) *models.Update {
+	return &models.Update{
+		ID: id,
+		Message: &models.Message{
+			From: &models.User{ID: userID},
+			Chat: models.Chat{ID: chatID},
+			Text: text,
+		},
+	}
 }

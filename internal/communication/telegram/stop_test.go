@@ -50,15 +50,15 @@ func TestStopEndsTheTurnAndDropsTheQueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "slow"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "slow"))
 	<-model.started
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "queued"))
-	bot.dispatch(ctx, textUpdate(3, 42, 99, "/stop"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "queued"))
+	bot.dispatch(ctx, nil, textUpdate(3, 42, 99, "/stop"))
 	if got := fake.nextSent(t); got != "Stopped." {
 		t.Fatalf("reply = %q", got)
 	}
 
-	bot.dispatch(ctx, textUpdate(4, 42, 99, "hello"))
+	bot.dispatch(ctx, nil, textUpdate(4, 42, 99, "hello"))
 	if got := fake.nextSent(t); got != "answer to hello" {
 		t.Fatalf("reply = %q, want no report of the stopped turn", got)
 	}
@@ -76,9 +76,9 @@ func TestStopEndsATask(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
 	<-tasks.started
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "/stop"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "/stop"))
 	if got := fake.nextSent(t); got != "Stopped." {
 		t.Fatalf("reply = %q", got)
 	}
@@ -105,10 +105,10 @@ func TestStopWithNothingToStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 7, 99, "/stop"))
+	bot.dispatch(ctx, nil, textUpdate(1, 7, 99, "/stop"))
 	fake.expectNoSend(t)
 
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "/stop"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "/stop"))
 	if got := fake.nextSent(t); got != "Nothing to stop." {
 		t.Errorf("reply = %q", got)
 	}

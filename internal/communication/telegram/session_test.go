@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+	"github.com/go-telegram/bot/models"
 	"github.com/skryvets/my-agent/internal/agent"
 )
 
@@ -22,11 +23,11 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "first"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "first"))
 	if got := fake.nextSent(t); got != "answer 1" {
 		t.Fatalf("reply = %q", got)
 	}
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "second"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "second"))
 	if got := fake.nextSent(t); got != "answer 2" {
 		t.Fatalf("reply = %q", got)
 	}
@@ -45,7 +46,7 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 	if methods[0] != "sendChatAction" {
 		t.Errorf("methods = %v", methods)
 	}
-	if action := fake.calls[0].Payload["action"]; action != "typing" {
+	if action := fake.calls[0].Form["action"]; action != "typing" {
 		t.Errorf("action = %#v", action)
 	}
 }
@@ -64,11 +65,11 @@ func TestServeReportsFailedTurnAndDropsIt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "boom"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "boom"))
 	if got := fake.nextSent(t); !strings.Contains(got, "rate limited") {
 		t.Fatalf("reply = %q", got)
 	}
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "retry"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "retry"))
 	if got := fake.nextSent(t); got != "ok" {
 		t.Fatalf("reply = %q", got)
 	}
@@ -88,7 +89,7 @@ func TestServeHandlesCommands(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/start"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/start"))
 	got := fake.nextSent(t)
 	if !strings.Contains(got, "/reset") {
 		t.Fatalf("start reply = %q", got)
@@ -96,13 +97,13 @@ func TestServeHandlesCommands(t *testing.T) {
 	if !strings.Contains(got, "test-model") {
 		t.Errorf("help does not name the model: %q", got)
 	}
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "hello"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "hello"))
 	fake.nextSent(t)
-	bot.dispatch(ctx, textUpdate(3, 42, 99, "/reset"))
+	bot.dispatch(ctx, nil, textUpdate(3, 42, 99, "/reset"))
 	if got := fake.nextSent(t); got != "Conversation cleared." {
 		t.Fatalf("reset reply = %q", got)
 	}
-	bot.dispatch(ctx, textUpdate(4, 42, 99, "again"))
+	bot.dispatch(ctx, nil, textUpdate(4, 42, 99, "again"))
 	fake.nextSent(t)
 
 	if len(seen) != 2 || len(seen[1]) != 1 {
@@ -121,9 +122,9 @@ func TestDispatchIgnoresNonTextAndDisallowedUsers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, update{UpdateID: 1})
-	bot.dispatch(ctx, textUpdate(2, 7, 99, "   "))
-	bot.dispatch(ctx, textUpdate(3, 42, 99, "let me in"))
+	bot.dispatch(ctx, nil, &models.Update{ID: 1})
+	bot.dispatch(ctx, nil, textUpdate(2, 7, 99, "   "))
+	bot.dispatch(ctx, nil, textUpdate(3, 42, 99, "let me in"))
 	fake.expectNoSend(t)
 }
 
@@ -140,9 +141,26 @@ func TestDispatchTellsSenderWhenQueueIsFull(t *testing.T) {
 	defer close(release)
 
 	for id := int64(1); id <= queueSize+2; id++ {
-		bot.dispatch(ctx, textUpdate(id, 42, 99, "queued"))
+		bot.dispatch(ctx, nil, textUpdate(id, 42, 99, "queued"))
 	}
 	if got := fake.nextSent(t); !strings.Contains(got, "still working") {
 		t.Fatalf("reply = %q", got)
+	}
+}
+
+func TestReplySplitsLongText(t *testing.T) {
+	fake := newFakeTelegram(t)
+	bot := newTestBot(fake, nil)
+
+	bot.reply(context.Background(), 99, strings.Repeat("a", maxMessage)+"\ntail")
+
+	if first := fake.nextSent(t); len([]rune(first)) != maxMessage {
+		t.Errorf("first part length = %d", len([]rune(first)))
+	}
+	if second := fake.nextSent(t); second != "tail" {
+		t.Errorf("second part = %q", second)
+	}
+	if got := fake.calls[0].Form["chat_id"]; got != "99" {
+		t.Errorf("chat_id = %q", got)
 	}
 }

@@ -10,7 +10,9 @@ The agentic work runs on [eino](https://github.com/cloudwego/eino), the agent
 development kit of CloudWeGo. eino parses the server-sent events, joins the
 streamed `tool_calls` fragments, runs a round of tools, tries a failed model
 call again and asks the model until it answers in words. The agent supplies the
-tools, the history and the stream.
+tools, the history and the stream. The Telegram connector runs on
+[go-telegram/bot](https://github.com/go-telegram/bot): it polls `getUpdates`,
+backs off, obeys `retry_after` and speaks the Bot API.
 
 The rest is the standard library, and it shows four things that are easy to get
 right only once:
@@ -27,7 +29,7 @@ flowchart LR
     main["main.go<br/>flag parsing, wiring"]
 
     subgraph comm ["internal/communication"]
-        tg["telegram<br/>bot, session, client"]
+        tg["telegram<br/>go-telegram/bot, session"]
         term["terminal<br/>stdin, stdout"]
     end
 
@@ -270,7 +272,7 @@ export GITHUB_TOKEN=github_pat_...
 go run .
 ```
 
-The bot long-polls `getUpdates` for `message` updates, keeps one conversation per chat, and answers each message with the model. Commands:
+[go-telegram/bot](https://github.com/go-telegram/bot) long-polls `getUpdates` for `message` updates. The bot keeps one conversation per chat, and answers each message with the model. Commands:
 
 - `/start`, `/help` - what the bot does
 - `/task owner/name what to change` - change a repository in its dev container and open a pull request
@@ -284,7 +286,7 @@ Details worth knowing:
 - `/stop` is read as it arrives, not in the queue of the chat, because the queue waits behind the very message it has to stop
 - history is capped at the last 10 turns per chat and lives in memory only, so a restart clears it
 - answers longer than Telegram's 4096 character limit are split on the last blank line, newline or space that fits
-- a `429` from Telegram is retried after the `retry_after` it returns, other poll failures back off up to a minute
+- go-telegram/bot retries a `429` after the `retry_after` it returns, and backs off after any other poll failure
 - Ctrl-C or `SIGTERM` stops the bot
 
 ## Deploying
