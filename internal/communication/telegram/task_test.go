@@ -58,7 +58,7 @@ func TestTaskStartsARunAndReportsItsProgress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix the lint warning"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix the lint warning"))
 
 	if got := fake.nextSent(t); got != "Cloning skryvets/my-agent" {
 		t.Errorf("first line = %q", got)
@@ -84,17 +84,17 @@ func TestTaskAnswersWhenItCannotRun(t *testing.T) {
 	defer cancel()
 
 	// No runner was wired in.
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
 	if got := fake.nextSent(t); !strings.Contains(got, "GITHUB_TOKEN") {
 		t.Errorf("reply = %q", got)
 	}
 
 	bot.tasks = &fakeTasks{}
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "/task"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "/task"))
 	if got := fake.nextSent(t); !strings.Contains(got, "/task owner/name") {
 		t.Errorf("reply = %q", got)
 	}
-	bot.dispatch(ctx, textUpdate(3, 42, 99, "/task skryvets/my-agent"))
+	bot.dispatch(ctx, nil, textUpdate(3, 42, 99, "/task skryvets/my-agent"))
 	if got := fake.nextSent(t); !strings.Contains(got, "/task owner/name") {
 		t.Errorf("reply = %q", got)
 	}
@@ -108,7 +108,7 @@ func TestTaskReportsAFailedRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
 	if got := fake.nextSent(t); !strings.Contains(got, "github said no") {
 		t.Errorf("reply = %q", got)
 	}
@@ -126,9 +126,9 @@ func TestTaskKeepsTheConversationGoing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix it"))
 	fake.nextSent(t)
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "what did you do?"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "what did you do?"))
 	fake.nextSent(t)
 
 	// The command is not a turn of the conversation.
@@ -161,13 +161,13 @@ func TestHelpNamesTaskOnlyWhenItCanRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, textUpdate(1, 42, 99, "/help"))
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/help"))
 	if got := fake.nextSent(t); strings.Contains(got, "/task") {
 		t.Errorf("help offers a command that cannot run: %q", got)
 	}
 
 	bot.tasks = &fakeTasks{}
-	bot.dispatch(ctx, textUpdate(2, 42, 99, "/help"))
+	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "/help"))
 	if got := fake.nextSent(t); !strings.Contains(got, "/task owner/name") {
 		t.Errorf("help = %q", got)
 	}

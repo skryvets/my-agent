@@ -3,9 +3,11 @@
 A Telegram and terminal chatbot over the OpenRouter chat completions API. The
 agentic work runs on [eino](https://github.com/cloudwego/eino): eino streams
 the reply, reassembles the tool calls, runs them, retries a failed call and
-asks the model again. `go.mod` requires eino and the eino OpenAI model, and
-nothing else. Everything below `internal/sandbox`, `internal/devcontainer` and
-`internal/task` stays on the standard library.
+asks the model again. The Telegram connector runs on
+[go-telegram/bot](https://github.com/go-telegram/bot), which polls and speaks
+the Bot API. `go.mod` requires eino, the eino OpenAI model and go-telegram/bot,
+and nothing else. Everything below `internal/sandbox`, `internal/devcontainer`
+and `internal/task` stays on the standard library.
 
 ## Layout
 
@@ -43,13 +45,10 @@ internal/sandbox/                    one dev container for each task
   workspace.go                       the Workspace the tools see
   reaper.go                          throw away what went quiet
 internal/communication/telegram/     Telegram bot connector, the default
-  telegram.go                        Run, options, configuration from the environment
+  telegram.go                        Run, the go-telegram bot, configuration from the environment
   task.go                            the /task command
   stop.go                            the /stop command
-  bot.go                             the getUpdates poll loop and its backoff
   session.go                         per-chat goroutine, commands, history
-  client.go                          Bot API transport
-  types.go                           Bot API wire types
   text.go                            splitting an answer to fit a message
 internal/communication/terminal/     stdin and stdout connector, -cli
 deploy/                              the systemd service and the script that installs it
@@ -94,6 +93,10 @@ deploy/                              the systemd service and the script that ins
   task without the task knowing about Telegram. A nil `Tasks` turns `/task` off
 - a message or a task runs on a context that `/stop` cancels. Replies go out on
   the context of the bot, so the chat can still be answered after a stop
+- the poll loop, its backoff and its `retry_after` belong to go-telegram/bot.
+  The bot registers one default handler and runs it with
+  `WithNotAsyncHandlers`, so the messages of a chat reach its queue in order.
+  `dispatch` only queues, so the poll loop never waits for an answer
 - git and the GitHub API run in the agent process, never in the container. The
   model must not see the token, so a task clones on the host and lends the
   checkout to the container with a bind. Do not move either one inside
@@ -122,8 +125,9 @@ deploy/                              the systemd service and the script that ins
 its coverage above 90%; `main.go` is wiring and is not covered.
 
 Test files mirror source files (`session.go` / `session_test.go`). The shared
-Telegram fake, an `httptest` server that records calls, lives in `fake_test.go`
-alongside `fakeAgent` and `newTestBot`. The Docker fake answers on a unix
+Telegram fake, an `httptest` server that records the multipart form of each
+call, lives in `fake_test.go` alongside `fakeAgent` and `newTestBot`, which
+points `bot.New` at the fake with `WithServerURL` and `WithSkipGetMe`. The Docker fake answers on a unix
 socket in `internal/sandbox/fake_test.go`. `internal/agent/fake_test.go` holds
 `fakeModel`, a scripted `model.BaseChatModel` that `newClient` takes in place
 of OpenRouter. No test reaches the network.
