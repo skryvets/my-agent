@@ -26,18 +26,14 @@ type apiCall struct {
 type fakeTelegram struct {
 	server *httptest.Server
 
-	mu      sync.Mutex
-	calls   []apiCall
-	replies map[string]string
-	sent    chan string
+	mu    sync.Mutex
+	calls []apiCall
+	sent  chan string
 }
 
 func newFakeTelegram(t *testing.T) *fakeTelegram {
 	t.Helper()
-	fake := &fakeTelegram{
-		replies: map[string]string{},
-		sent:    make(chan string, 16),
-	}
+	fake := &fakeTelegram{sent: make(chan string, 16)}
 	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 
@@ -50,29 +46,18 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 
 		fake.mu.Lock()
 		fake.calls = append(fake.calls, apiCall{Method: method, Form: form})
-		reply, ok := fake.replies[method]
 		fake.mu.Unlock()
 
+		reply := `{"ok":true,"result":true}`
 		if method == "sendMessage" {
 			fake.sent <- form["text"]
-			if !ok {
-				reply, ok = `{"ok":true,"result":{"message_id":1}}`, true
-			}
-		}
-		if !ok {
-			reply = `{"ok":true,"result":true}`
+			reply = `{"ok":true,"result":{"message_id":1}}`
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, reply)
 	}))
 	t.Cleanup(fake.server.Close)
 	return fake
-}
-
-func (f *fakeTelegram) reply(method, body string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.replies[method] = body
 }
 
 func (f *fakeTelegram) methods() []string {
