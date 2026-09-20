@@ -1,21 +1,21 @@
 # my-agent
 
-A Telegram and terminal chatbot over the OpenRouter chat completions API. No
-third-party Go dependencies - `go.mod` has no `require` block, and it should
-stay that way unless there is a reason the standard library cannot cover.
+A Telegram and terminal chatbot over the OpenRouter chat completions API. The
+agentic work runs on [eino](https://github.com/cloudwego/eino): eino streams
+the reply, reassembles the tool calls, runs them, retries a failed call and
+asks the model again. `go.mod` requires eino and the eino OpenAI model, and
+nothing else. Everything below `internal/sandbox`, `internal/devcontainer` and
+`internal/task` stays on the standard library.
 
 ## Layout
 
 ```
 main.go                              flag parsing and wiring, nothing else
 internal/agent/                      the model
-  agent.go                           Client, Model, one request
-  loop.go                            the tool-calling loop
-  tool.go                            the Tool interface and the registry
-  toolcall.go                        reassembling streamed tool_calls
-  stream.go                          server-sent events parsing
-  reasoning.go                       reassembling streamed reasoning_details
-  history.go                         a conversation in the API's wire format
+  agent.go                           Client, New, the eino agent and its runner
+  chat.go                            one turn, read from the eino event stream
+  failure.go                         what to retry, what to tell the model
+  history.go                         a conversation as eino schema.Message
 internal/tools/                      what the agent can do in a dev container
   workspace.go                       the Workspace interface
   shell.go                           run a command
@@ -62,15 +62,19 @@ deploy/                              the systemd service and the script that ins
 - a connector takes the `Agent` interface (`Model() string`, `Chat(ctx, history,
   stream)`), declared in the connector that consumes it. Adding a connector is a
   new folder here plus a branch in `main.go` - do not touch `internal/agent`
-- conversation state is `agent.History`. Build turns with `WithUser`,
-  `WithAssistant`, `WithToolCalls`, `DropLast` and `Trim` rather than assembling
-  `map[string]any` in a connector. A `Message` carries the tool turns that
-  produced it in `Steps`, and `WithAssistant` puts them back, so a connector
-  keeps the whole round without knowing the tool wire format
-- a tool is a type in `internal/tools` that satisfies `agent.Tool`. Adding one
-  is a new file there plus a line in `main.go` - `internal/agent` stays a loop
-  that knows no tool by name. A tool reports a failure as text for the model,
-  and returns an error only when the call itself was malformed
+- conversation state is `agent.History`, a slice of eino `*schema.Message`.
+  Build turns with `WithUser`, `WithAssistant`, `DropLast` and `Trim` rather
+  than assembling messages in a connector. A `Message` carries the tool turns
+  that produced it in `Steps`, and `WithAssistant` puts them back, so a
+  connector keeps the whole round without knowing the tool wire format
+- a tool is a constructor in `internal/tools` that returns an eino
+  `tool.BaseTool`, built with `utils.InferTool` from an arguments struct with
+  `jsonschema` tags. Adding one is a new file there plus a line in `main.go` -
+  `internal/agent` knows no tool by name. A tool returns an ordinary error;
+  `agent.New` wraps every tool so the failure reaches the model as text
+- do not write a JSON Schema by hand. `utils.InferTool` reads it from the
+  arguments struct. A `description` in a `jsonschema` tag must carry no comma,
+  because a comma separates the options of the tag
 - a tool never touches the host. It works through `tools.Workspace`, which is
   `*sandbox.Pool`, the dev container of a task. A chat, in Telegram or with
   `-cli`, offers the model no tools. There is no host mode and no approval
@@ -79,8 +83,8 @@ deploy/                              the systemd service and the script that ins
   repository, never from the agent. Read it with `internal/devcontainer`, and
   never put a value of the host into it, because the host holds the token
 - `internal/sandbox` speaks the Docker Engine API over the unix socket with
-  `net/http` and its own `DialContext`. That is what keeps `go.mod` empty of
-  requirements, so do not reach for the Docker SDK. The API version is pinned
+  `net/http` and its own `DialContext`. Do not reach for the Docker SDK: one
+  library for the agentic work is the whole budget. The API version is pinned
   in `docker.go`
 - which conversation a call belongs to travels in the context, not in an
   argument. The task runner names it once with `conversation.WithKey`, and the
@@ -99,9 +103,15 @@ deploy/                              the systemd service and the script that ins
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
   carrying two
-- reasoning is deliberately disabled in `complete`. The reassembly code in
-  `reasoning.go` is kept for when it is switched back on - do not delete it as
-  dead code, and do not enable reasoning without being asked
+- reasoning is deliberately disabled, in the `ExtraFields` of the chat model in
+  `agent.go`. eino joins the reasoning chunks itself, so switching reasoning
+  back on is that one field. Do not switch it on without being asked
+- one failed model call is tried again, up to `maxRetries` times, with the
+  exponential backoff and the jitter of eino. `retryable` refuses a second
+  attempt to a run the caller stopped, because `/stop` must end a run at once,
+  and to a request the server refused with a 4xx other than 429
+- an error that leaves `Chat` passes through `plain`, because eino wraps a
+  failure in a node path and that text goes straight into a chat
 - the README carries two mermaid diagrams, one of the package structure and one
   of a single turn. Changing either shape means updating them
 - decisions about behavior are recorded in `docs/decisions/`
@@ -114,7 +124,9 @@ its coverage above 90%; `main.go` is wiring and is not covered.
 Test files mirror source files (`session.go` / `session_test.go`). The shared
 Telegram fake, an `httptest` server that records calls, lives in `fake_test.go`
 alongside `fakeAgent` and `newTestBot`. The Docker fake answers on a unix
-socket in `internal/sandbox/fake_test.go`. No test reaches the network.
+socket in `internal/sandbox/fake_test.go`. `internal/agent/fake_test.go` holds
+`fakeModel`, a scripted `model.BaseChatModel` that `newClient` takes in place
+of OpenRouter. No test reaches the network.
 
 ## Deployment
 

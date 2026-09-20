@@ -8,11 +8,10 @@ import (
 
 func TestReadFileAsksTheWorkspace(t *testing.T) {
 	workspace := &fakeWorkspace{output: "package pkg\n"}
-	read := ReadFile{Workspace: workspace}
 
-	got, err := read.Call(context.Background(), []byte(`{"path":"pkg/hello.go"}`))
+	got, err := call(t, build(t, ReadFile, workspace), `{"path":"pkg/hello.go"}`)
 	if err != nil {
-		t.Fatalf("Call: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	if workspace.path != "pkg/hello.go" {
 		t.Errorf("path = %q", workspace.path)
@@ -24,11 +23,10 @@ func TestReadFileAsksTheWorkspace(t *testing.T) {
 
 func TestWriteFileAsksTheWorkspace(t *testing.T) {
 	workspace := &fakeWorkspace{}
-	write := WriteFile{Workspace: workspace}
 
-	out, err := write.Call(context.Background(), []byte(`{"path":"hello.go","content":"package pkg\n"}`))
+	out, err := call(t, build(t, WriteFile, workspace), `{"path":"hello.go","content":"package pkg\n"}`)
 	if err != nil {
-		t.Fatalf("Call: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	if workspace.path != "hello.go" || workspace.content != "package pkg\n" {
 		t.Errorf("wrote %q to %q", workspace.content, workspace.path)
@@ -41,9 +39,9 @@ func TestWriteFileAsksTheWorkspace(t *testing.T) {
 func TestFileToolsCutLongContent(t *testing.T) {
 	workspace := &fakeWorkspace{output: strings.Repeat("a", outputLimit*2)}
 
-	got, err := ReadFile{Workspace: workspace}.Call(context.Background(), []byte(`{"path":"big.txt"}`))
+	got, err := call(t, build(t, ReadFile, workspace), `{"path":"big.txt"}`)
 	if err != nil {
-		t.Fatalf("Call: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	if !strings.Contains(got, "bytes cut") {
 		t.Error("long content was not cut")
@@ -51,40 +49,45 @@ func TestFileToolsCutLongContent(t *testing.T) {
 }
 
 func TestFileToolsDescribeThemselves(t *testing.T) {
-	read := ReadFile{}
-	write := WriteFile{}
-	if read.Name() != "read_file" || write.Name() != "write_file" {
-		t.Errorf("names = %q %q", read.Name(), write.Name())
+	read := build(t, ReadFile, &fakeWorkspace{})
+	write := build(t, WriteFile, &fakeWorkspace{})
+
+	readInfo, err := read.Info(context.Background())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
 	}
-	if read.Description() == "" || write.Description() == "" {
+	writeInfo, err := write.Info(context.Background())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if readInfo.Name != "read_file" || writeInfo.Name != "write_file" {
+		t.Errorf("names = %q %q", readInfo.Name, writeInfo.Name)
+	}
+	if readInfo.Desc == "" || writeInfo.Desc == "" {
 		t.Error("a tool has no description")
 	}
-	readProperties, _ := read.Parameters()["properties"].(map[string]any)
-	if readProperties["content"] != nil {
-		t.Errorf("read_file asks for content: %#v", read.Parameters())
+	if properties(t, read)["content"] {
+		t.Error("read_file asks for content")
 	}
-	writeProperties, _ := write.Parameters()["properties"].(map[string]any)
-	if writeProperties["content"] == nil {
-		t.Errorf("write_file does not ask for content: %#v", write.Parameters())
-	}
-	if required, _ := write.Parameters()["required"].([]string); len(required) != 2 {
-		t.Errorf("required = %#v", write.Parameters()["required"])
+	if !properties(t, write)["path"] || !properties(t, write)["content"] {
+		t.Errorf("write_file asks for %#v", properties(t, write))
 	}
 }
 
 func TestFileToolsReportTheirErrors(t *testing.T) {
-	broken := &fakeWorkspace{err: errWorkspace}
+	read := build(t, ReadFile, &fakeWorkspace{err: errWorkspace})
+	write := build(t, WriteFile, &fakeWorkspace{err: errWorkspace})
 
-	if _, err := (ReadFile{Workspace: broken}).Call(context.Background(), []byte(`{"path":"a.txt"}`)); err == nil {
+	if _, err := call(t, read, `{"path":"a.txt"}`); err == nil {
 		t.Error("expected the workspace failure")
 	}
-	if _, err := (WriteFile{Workspace: broken}).Call(context.Background(), []byte(`{"path":"a.txt","content":"x"}`)); err == nil {
+	if _, err := call(t, write, `{"path":"a.txt","content":"x"}`); err == nil {
 		t.Error("expected the workspace failure")
 	}
-	if _, err := (ReadFile{}).Call(context.Background(), []byte(`{oops`)); err == nil {
+	if _, err := call(t, read, `{oops`); err == nil {
 		t.Error("expected an error for bad arguments")
 	}
-	if _, err := (WriteFile{}).Call(context.Background(), []byte(`{oops`)); err == nil {
+	if _, err := call(t, write, `{oops`); err == nil {
 		t.Error("expected an error for bad arguments")
 	}
 }

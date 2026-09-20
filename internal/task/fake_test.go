@@ -33,7 +33,7 @@ func (f *fakeAgent) Chat(ctx context.Context, history agent.History, _ io.Writer
 	f.mu.Lock()
 	f.keys = append(f.keys, conversation.KeyOf(ctx))
 	if len(history) > 0 {
-		text, _ := history[0]["content"].(string)
+		text := history[0].Content
 		f.told = append(f.told, text)
 	}
 	f.mu.Unlock()

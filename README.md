@@ -6,13 +6,18 @@ One message from a phone - "fix the lint warning in my-agent" - clones the
 repository, changes it in its own dev container, runs the tests, pushes a
 branch and answers with a link to the pull request.
 
-It shows six things that are easy to get wrong:
+The agentic work runs on [eino](https://github.com/cloudwego/eino), the agent
+development kit of CloudWeGo. eino parses the server-sent events, joins the
+streamed `tool_calls` fragments, runs a round of tools, tries a failed model
+call again and asks the model until it answers in words. The agent supplies the
+tools, the history and the stream.
 
-- server-sent events parsing, including OpenRouter keep-alive comment lines
-- reassembling streamed `tool_calls` fragments, which arrive indexed and split across chunks, and running a round of them before asking the model again
-- reassembling streamed `reasoning_details` fragments so the model's thinking can be replayed in a follow-up turn, kept for when reasoning is switched on
+The rest is the standard library, and it shows four things that are easy to get
+right only once:
+
 - reading `devcontainer.json`, which is JSON with comments, with nothing but `encoding/json`
 - driving the Docker Engine API over its unix socket with nothing but `net/http`, to build or pull that dev container and run the tools inside it
+- keeping the GitHub token out of the container, so the model never sees it
 - stopping a run from the phone half way through, without losing the chat
 
 It runs as a Telegram bot, or in the terminal with `-cli`.
@@ -27,9 +32,8 @@ flowchart LR
     end
 
     subgraph core ["internal/agent"]
-        chat["loop.go<br/>Client.Chat"]
-        reg["tool.go<br/>Registry"]
-        sse["stream.go<br/>toolcall.go<br/>reasoning.go"]
+        chat["chat.go<br/>Client.Chat"]
+        eino["agent.go<br/>eino Runner<br/>failure.go<br/>tools, retries"]
     end
 
     subgraph kit ["internal/tools"]
@@ -53,16 +57,16 @@ flowchart LR
 
     main -->|default| tg
     main -->|"-cli"| term
-    main -->|Tool values| reg
+    main -->|eino tools| eino
     tg -->|Agent interface| chat
     term -->|Agent interface| chat
-    chat -->|"POST, stream: true"| api
-    api -->|server-sent events| sse
-    sse --> chat
-    chat -->|tool_calls| reg
-    reg --> sh
+    chat -->|history| eino
+    eino -->|"POST, stream: true"| api
+    api -->|server-sent events| eino
+    eino -->|events| chat
+    eino -->|tool calls| sh
     sh -->|Workspace| pool
-    sh -->|results| chat
+    sh -->|results| eino
     tg -->|"/task, /stop"| runner
     runner -->|reads| dc
     runner -->|bind the checkout| pool
@@ -102,7 +106,7 @@ A chat, in the terminal or in Telegram, offers the model no tools: it answers
 in words. Work on a repository goes through `/task`, in the dev container of
 that repository.
 
-Reasoning is off: every request sends `"reasoning": {"enabled": false}`, so the model returns an answer and no thinking. Turning it on makes the model stream `reasoning` and `reasoning_details` too, which `internal/agent` already reassembles and replays on the next turn - the terminal prints it under a `--- reasoning ---` header, above the answer under `--- answer ---`.
+Reasoning is off: every request sends `"reasoning": {"enabled": false}`, in the `ExtraFields` of the chat model in `internal/agent/agent.go`. The model returns an answer and no thinking. That one field switches reasoning back on, and eino joins the reasoning chunks and replays them on the next turn.
 
 ## Tools
 
@@ -114,16 +118,36 @@ In a task the model does not only answer, it acts. Three tools ship today:
 | `read_file` | returns the text of a file |
 | `write_file` | replaces the content of a file and creates the parent directories |
 
-One turn can take several rounds. `Chat` sends the tool schemas with the
-request; if the model answers with `tool_calls` instead of words, the loop runs
-the calls, appends one `tool` turn for each of them, and asks the model again.
-It stops on a plain answer, or after ten rounds. Independent calls of one round
-run at the same time, up to four.
+Each tool is an eino `tool.InvokableTool`. `utils.InferTool` reads the
+arguments schema from a Go struct with `jsonschema` tags, so no schema is
+written by hand.
+
+One turn can take several rounds. eino sends the tool schemas with the request;
+if the model answers with `tool_calls` instead of words, eino runs the calls,
+appends one `tool` turn for each of them, and asks the model again. It stops on
+a plain answer, or after ten rounds. Independent calls of one round run at the
+same time.
 
 A tool that fails reports the failure to the model as text, so a command that
 exits non-zero is an answer the model can read and work around, not a broken
-turn. Output is cut to the last 8000 bytes, because the whole result goes back
-into the history on every later turn.
+turn. `agent.New` wraps every tool for that. A name the model invented gets the
+same treatment. Output is cut to the last 8000 bytes, because the whole result
+goes back into the history on every later turn.
+
+## Retries
+
+One model call that fails is tried again, up to three times, with the
+exponential backoff and the jitter of eino: 100 ms, then double each time, to a
+10 s ceiling.
+
+Two failures get no second attempt. A call the caller stopped gets none,
+because `/stop` must end a run at once. A request the server refused on its own
+terms gets none either - a wrong key, a model that does not exist, a malformed
+request - because it fails the same way every time. Too many requests, a server
+failure and a broken connection are all tried again.
+
+After the last attempt the failure reaches the chat, the turn is dropped with
+`DropLast` and the conversation stays alive.
 
 A tool never touches the host. It works through a `Workspace`, which is the dev
 container of the task the call belongs to. No tool call waits for a person: the
@@ -169,8 +193,8 @@ The container of a task:
 | the agent starts | the containers of an earlier run are removed |
 
 `internal/sandbox` speaks the Docker Engine API itself, over the unix socket,
-with `net/http` and its own `DialContext`. That is what keeps `go.mod` free of
-requirements. The calls it makes: pull or build an image, create and start a
+with `net/http` and its own `DialContext`, rather than with the Docker SDK. The
+calls it makes: pull or build an image, create and start a
 container, create and start an exec, and put or get a tar through the archive
 endpoint, because the API has no endpoint that takes a plain file.
 
@@ -192,7 +216,7 @@ The bot answers as it goes, because a run takes minutes:
 Cloning skryvets/my-agent
 Starting the dev container
 Working on it
-I removed the unused import in stream.go and go vet is clean.
+I removed the unused import in chat.go and go vet is clean.
 Pushing my-agent/20260912-134544-1
 Pull request open: https://github.com/skryvets/my-agent/pull/8
 ```
@@ -309,29 +333,30 @@ sequenceDiagram
     participant conn as Connector
     participant out as stream writer
     participant agent as agent.Client
-    participant reg as Registry
+    participant eino as eino Runner
+    participant kit as internal/tools
     participant api as OpenRouter
 
     user->>conn: message
     conn->>conn: history.WithUser(text)
     conn->>agent: Chat(ctx, history, stream)
+    agent->>eino: Run(ctx, history)
 
     loop until the model answers in words, up to ten rounds
-        agent->>api: POST /chat/completions, tools
-        loop until the stream ends
-            api-->>agent: content or tool_calls delta
-            agent->>out: content as it arrives
-            agent->>agent: join reasoning_details and tool_calls fragments
-        end
+        eino->>api: POST /chat/completions, tools
+        api-->>eino: server-sent events
+        note over eino,api: a failed call is tried again,<br/>up to three times, with backoff
+        eino-->>agent: event, a message or a stream of chunks
+        agent->>out: content as it arrives
         alt the model asked for tools
-            agent->>agent: steps.WithToolCalls(msg)
-            agent->>reg: run the calls, up to four at a time
-            reg-->>agent: one tool turn for each call
-        else the model answered in words
-            agent-->>conn: Message{Content, Steps}
+            eino->>kit: run the calls
+            kit-->>eino: one tool turn for each call
+            agent->>out: the name of each tool
         end
     end
 
+    eino-->>agent: the answer in words
+    agent-->>conn: Message{Content, Steps}
     conn->>conn: history.WithAssistant(msg)
     conn-->>user: answer
 ```
@@ -349,16 +374,15 @@ answer in one go.
 turn replays what the agent did and the connector never has to know the
 `tool_calls` wire format.
 
-`ReasoningDetails` goes back into the history with the assistant turn, so the
-model can follow up on its own thinking. It is empty while reasoning is off. A
-turn the model failed to answer is dropped with `DropLast`, so a broken turn
-never poisons the history.
+A turn the model failed to answer is dropped with `DropLast`, so a broken turn
+never poisons the history. Reasoning is off, in the `ExtraFields` of the chat
+model; eino joins the reasoning chunks itself when it is switched back on.
 
 ## Layout
 
 ```
 main.go                              flag parsing and wiring
-internal/agent/                      the model: OpenRouter client, SSE stream, tool loop, history
+internal/agent/                      the model: the eino agent over OpenRouter, and the history
 internal/tools/                      what the agent can do in a dev container: shell, files
 internal/devcontainer/               the environment a repository describes for itself
 internal/conversation/               which conversation a call belongs to
