@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/skryvets/my-agent/internal/agent"
 )
 
@@ -33,10 +34,10 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 	if len(seen) != 2 || len(seen[1]) != 3 {
 		t.Fatalf("history = %#v", seen)
 	}
-	if seen[1][0]["content"] != "first" || seen[1][1]["content"] != "answer 1" || seen[1][2]["content"] != "second" {
+	if seen[1][0].Content != "first" || seen[1][1].Content != "answer 1" || seen[1][2].Content != "second" {
 		t.Errorf("history = %#v", seen[1])
 	}
-	if seen[1][1]["role"] != "assistant" {
+	if seen[1][1].Role != schema.Assistant {
 		t.Errorf("assistant turn = %#v", seen[1][1])
 	}
 
@@ -71,7 +72,7 @@ func TestServeReportsFailedTurnAndDropsIt(t *testing.T) {
 	if got := fake.nextSent(t); got != "ok" {
 		t.Fatalf("reply = %q", got)
 	}
-	if len(seen[1]) != 1 || seen[1][0]["content"] != "retry" {
+	if len(seen[1]) != 1 || seen[1][0].Content != "retry" {
 		t.Errorf("failed turn was kept: %#v", seen[1])
 	}
 }

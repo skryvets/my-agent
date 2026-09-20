@@ -22,7 +22,7 @@ type slowAgent struct {
 func (s *slowAgent) Model() string { return "test-model" }
 
 func (s *slowAgent) Chat(ctx context.Context, history agent.History, _ io.Writer) (agent.Message, error) {
-	text, _ := history[len(history)-1]["content"].(string)
+	text := history[len(history)-1].Content
 	s.mu.Lock()
 	s.asked = append(s.asked, text)
 	s.mu.Unlock()

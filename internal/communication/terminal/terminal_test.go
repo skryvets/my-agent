@@ -38,7 +38,7 @@ func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 	if len(seen) != 2 {
 		t.Fatalf("model called %d times, want 2", len(seen))
 	}
-	if len(seen[1]) != 3 || seen[1][0]["content"] != "first" || seen[1][2]["content"] != "second" {
+	if len(seen[1]) != 3 || seen[1][0].Content != "first" || seen[1][2].Content != "second" {
 		t.Errorf("history = %#v", seen[1])
 	}
 	if !strings.Contains(out.String(), "test-model") {
@@ -65,7 +65,7 @@ func TestRunReportsFailedTurnAndDropsIt(t *testing.T) {
 	if !strings.Contains(errOut.String(), "rate limited") {
 		t.Errorf("stderr = %q", errOut.String())
 	}
-	if len(seen[1]) != 1 || seen[1][0]["content"] != "retry" {
+	if len(seen[1]) != 1 || seen[1][0].Content != "retry" {
 		t.Errorf("failed turn was kept: %#v", seen[1])
 	}
 }

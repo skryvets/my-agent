@@ -3,19 +3,14 @@ package agent
 import (
 	"reflect"
 	"testing"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestHistoryAppendsTurns(t *testing.T) {
-	msg := Message{
-		Content:          "hi back",
-		ReasoningDetails: []map[string]any{{"index": float64(0), "text": "think"}},
-	}
-	history := History(nil).WithUser("hi").WithAssistant(msg)
+	history := History(nil).WithUser("hi").WithAssistant(Message{Content: "hi back"})
 
-	want := History{
-		{"role": "user", "content": "hi"},
-		{"role": "assistant", "content": "hi back", "reasoning_details": msg.ReasoningDetails},
-	}
+	want := History{schema.UserMessage("hi"), schema.AssistantMessage("hi back", nil)}
 	if !reflect.DeepEqual(history, want) {
 		t.Errorf("got %#v, want %#v", history, want)
 	}
@@ -23,7 +18,7 @@ func TestHistoryAppendsTurns(t *testing.T) {
 
 func TestHistoryDropLast(t *testing.T) {
 	history := History(nil).WithUser("one").WithUser("two")
-	if got := history.DropLast(); len(got) != 1 || got[0]["content"] != "one" {
+	if got := history.DropLast(); len(got) != 1 || got[0].Content != "one" {
 		t.Errorf("got %#v", got)
 	}
 	if got := History(nil).DropLast(); len(got) != 0 {
@@ -33,17 +28,17 @@ func TestHistoryDropLast(t *testing.T) {
 
 func TestHistoryTrimDropsWholeTurns(t *testing.T) {
 	history := History{
-		{"role": "user", "content": "1"},
-		{"role": "assistant", "content": "2"},
-		{"role": "user", "content": "3"},
-		{"role": "assistant", "content": "4"},
+		schema.UserMessage("1"),
+		schema.AssistantMessage("2", nil),
+		schema.UserMessage("3"),
+		schema.AssistantMessage("4", nil),
 	}
 	got := history.Trim(2)
 	want := history[2:]
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %#v, want %#v", got, want)
 	}
-	if got := history.Trim(3); got[0]["role"] != "user" {
+	if got := history.Trim(3); got[0].Role != schema.User {
 		t.Errorf("history starts on %#v", got[0])
 	}
 	if got := history.Trim(10); !reflect.DeepEqual(got, history) {
@@ -52,49 +47,49 @@ func TestHistoryTrimDropsWholeTurns(t *testing.T) {
 }
 
 func TestHistoryTrimDropsEverythingWhenLimitIsZero(t *testing.T) {
-	history := History{{"role": "user"}, {"role": "assistant"}}
+	history := History{schema.UserMessage("1"), schema.AssistantMessage("2", nil)}
 	if got := history.Trim(0); got != nil {
 		t.Errorf("got %#v, want nil", got)
 	}
 }
 
 func TestHistoryReplaysToolCallsBeforeTheAnswer(t *testing.T) {
-	asked := Message{ToolCalls: []map[string]any{call(0, "call_1", "shell", `{"command":"ls"}`)}}
-	steps := History(nil).WithToolCalls(asked)
-	steps = append(steps, toolResult(asked.ToolCalls[0], "README.md"))
-
+	steps := History{
+		schema.AssistantMessage("", []schema.ToolCall{toolCall("call_1", "shell", `{"command":"ls"}`)}),
+		schema.ToolMessage("README.md", "call_1"),
+	}
 	history := History(nil).WithUser("list the files").
 		WithAssistant(Message{Content: "one file", Steps: steps})
 
 	if len(history) != 4 {
 		t.Fatalf("history = %#v", history)
 	}
-	if history[1]["role"] != "assistant" || history[1]["tool_calls"] == nil {
+	if history[1].Role != schema.Assistant || len(history[1].ToolCalls) != 1 {
 		t.Errorf("call turn = %#v", history[1])
 	}
-	if history[2]["role"] != "tool" || history[2]["content"] != "README.md" {
+	if history[2].Role != schema.Tool || history[2].Content != "README.md" {
 		t.Errorf("result turn = %#v", history[2])
 	}
-	if history[3]["content"] != "one file" || history[3]["tool_calls"] != nil {
+	if history[3].Content != "one file" || history[3].ToolCalls != nil {
 		t.Errorf("answer turn = %#v", history[3])
 	}
 }
 
 func TestHistoryTrimNeverStartsOnAToolResult(t *testing.T) {
 	history := History{
-		{"role": "user", "content": "1"},
-		{"role": "assistant", "tool_calls": []map[string]any{}},
-		{"role": "tool", "content": "2"},
-		{"role": "assistant", "content": "3"},
-		{"role": "user", "content": "4"},
-		{"role": "assistant", "content": "5"},
+		schema.UserMessage("1"),
+		schema.AssistantMessage("", []schema.ToolCall{toolCall("call_1", "shell", "{}")}),
+		schema.ToolMessage("2", "call_1"),
+		schema.AssistantMessage("3", nil),
+		schema.UserMessage("4"),
+		schema.AssistantMessage("5", nil),
 	}
 	for _, limit := range []int{1, 2, 3, 4, 5} {
 		got := history.Trim(limit)
 		if len(got) == 0 {
 			continue
 		}
-		if got[0]["role"] != "user" {
+		if got[0].Role != schema.User {
 			t.Errorf("Trim(%d) starts on %#v", limit, got[0])
 		}
 	}

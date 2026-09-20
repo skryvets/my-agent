@@ -29,7 +29,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	chat := agent.New(apiKey)
+	chat := must(agent.New(ctx, apiKey))
 
 	if *cli {
 		if err := terminal.Run(ctx, chat); err != nil {
@@ -50,11 +50,11 @@ func main() {
 		// first, so the containers are removed here where it is certain.
 		defer pool.Shutdown(context.WithoutCancel(ctx))
 
-		worker := agent.New(apiKey,
-			tools.Shell{Workspace: pool},
-			tools.ReadFile{Workspace: pool},
-			tools.WriteFile{Workspace: pool},
-		)
+		worker := must(agent.New(ctx, apiKey,
+			must(tools.Shell(pool)),
+			must(tools.ReadFile(pool)),
+			must(tools.WriteFile(pool)),
+		))
 		options = append(options, telegram.WithTasks(&task.Runner{
 			Agent:   worker,
 			Plain:   chat,
@@ -68,4 +68,13 @@ func main() {
 	if err := telegram.Run(ctx, chat, options...); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// must unwraps a value and an error. Every caller is start-up wiring, where
+// there is nothing to fall back to.
+func must[T any](value T, err error) T {
+	if err != nil {
+		log.Fatal(err)
+	}
+	return value
 }

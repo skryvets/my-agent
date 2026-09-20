@@ -1,23 +1,13 @@
 // Package tools is the set of actions the agent can take in a dev container: a
-// shell command, a file read and a file write. Each type satisfies agent.Tool.
+// shell command, a file read and a file write. Each one is an eino
+// tool.InvokableTool whose arguments schema is read from a Go struct.
 package tools
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 // outputLimit caps what one tool returns. A build log can be megabytes, and the
 // whole result goes back into the history on every later turn.
 const outputLimit = 8000
-
-// decode reads the arguments object the model produced.
-func decode(args json.RawMessage, into any) error {
-	if err := json.Unmarshal(args, into); err != nil {
-		return fmt.Errorf("cannot read the arguments: %v", err)
-	}
-	return nil
-}
 
 // truncate keeps the tail of long output, because the end of a build log says
 // what went wrong.
