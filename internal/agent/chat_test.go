@@ -188,7 +188,7 @@ func TestNewBuildsAClientForOpenRouter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if client.Model() != Model {
-		t.Errorf("model = %q, want %q", client.Model(), Model)
+	if client.Model() != slug {
+		t.Errorf("model = %q, want %q", client.Model(), slug)
 	}
 }

@@ -38,7 +38,7 @@ func main() {
 		return
 	}
 
-	var options []telegram.Option
+	var tasks telegram.Tasks
 	if token := os.Getenv("GITHUB_TOKEN"); token == "" {
 		log.Print("/task is off: GITHUB_TOKEN is not set")
 	} else {
@@ -55,17 +55,17 @@ func main() {
 			must(tools.ReadFile(pool)),
 			must(tools.WriteFile(pool)),
 		))
-		options = append(options, telegram.WithTasks(&task.Runner{
+		tasks = &task.Runner{
 			Agent:   worker,
 			Plain:   chat,
 			Sandbox: pool,
 			GitHub:  task.GitHub{Token: token},
 			Store:   task.Store{Dir: *stateDir},
 			Token:   token,
-		}))
+		}
 	}
 
-	if err := telegram.Run(ctx, chat, options...); err != nil {
+	if err := telegram.Run(ctx, chat, tasks); err != nil {
 		log.Fatal(err)
 	}
 }

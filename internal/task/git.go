@@ -19,7 +19,11 @@ type Git struct {
 // Clone copies one repository into Dir and leaves a new branch checked out.
 // The token is in the address, which is why every error is cleaned first.
 func (g Git) Clone(ctx context.Context, repo Repo, branch string) error {
-	return g.cloneFrom(ctx, g.address(repo), branch)
+	if _, err := g.run(ctx, "clone", "--depth", "1", g.address(repo), g.Dir); err != nil {
+		return err
+	}
+	_, err := g.run(ctx, "-C", g.Dir, "checkout", "-b", branch)
+	return err
 }
 
 // address is where one repository is cloned from, with the token in it when
@@ -35,14 +39,6 @@ func (g Git) address(repo Repo) string {
 		}
 	}
 	return fmt.Sprintf("%s/%s/%s.git", host, repo.Owner, repo.Name)
-}
-
-func (g Git) cloneFrom(ctx context.Context, url, branch string) error {
-	if _, err := g.run(ctx, "clone", "--depth", "1", url, g.Dir); err != nil {
-		return err
-	}
-	_, err := g.run(ctx, "-C", g.Dir, "checkout", "-b", branch)
-	return err
 }
 
 // Changed reports whether the checkout differs from what was cloned.

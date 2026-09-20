@@ -33,18 +33,9 @@ type Tasks interface {
 	Interrupted(ctx context.Context) []task.Run
 }
 
-// An Option changes the bot before it starts polling.
-type Option func(*Bot)
-
-// WithTasks answers /task, which clones a repository, changes it in its dev
-// container and opens a pull request.
-func WithTasks(tasks Tasks) Option {
-	return func(b *Bot) { b.tasks = tasks }
-}
-
 // Run reads the bot configuration from the environment and serves until ctx is
-// cancelled.
-func Run(ctx context.Context, model Agent, options ...Option) error {
+// cancelled. A nil tasks answers /task with the reason it is off.
+func Run(ctx context.Context, model Agent, tasks Tasks) error {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		return errors.New("TELEGRAM_BOT_TOKEN is not set")
@@ -60,13 +51,11 @@ func Run(ctx context.Context, model Agent, options ...Option) error {
 	bot := &Bot{
 		client:    newClient(token),
 		agent:     model,
+		tasks:     tasks,
 		allowed:   allowed,
 		retryBase: time.Second,
 		sessions:  map[int64]chan string{},
 		working:   map[int64]context.CancelFunc{},
-	}
-	for _, option := range options {
-		option(bot)
 	}
 	bot.reportInterrupted(ctx)
 	if err := bot.run(ctx); err != nil && !errors.Is(err, context.Canceled) {

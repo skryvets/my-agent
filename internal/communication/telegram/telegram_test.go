@@ -30,23 +30,12 @@ func TestRunRequiresToken(t *testing.T) {
 	}}
 
 	t.Setenv("TELEGRAM_BOT_TOKEN", "")
-	if err := Run(context.Background(), model); err == nil {
+	if err := Run(context.Background(), model, nil); err == nil {
 		t.Fatal("expected an error without a bot token")
 	}
 	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
 	t.Setenv("TELEGRAM_ALLOWED_USERS", "nope")
-	if err := Run(context.Background(), model); err == nil {
+	if err := Run(context.Background(), model, nil); err == nil {
 		t.Fatal("expected an error for a bad allowlist")
-	}
-}
-
-func TestOptionsReachTheBot(t *testing.T) {
-	tasks := &fakeTasks{}
-	bot := &Bot{}
-
-	WithTasks(tasks)(bot)
-
-	if bot.tasks != tasks {
-		t.Error("the tasks did not reach the bot")
 	}
 }
