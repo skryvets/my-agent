@@ -34,6 +34,12 @@ The roughly 530 lines across [`docker.go`](../internal/sandbox/docker.go), [`con
 
 [`git.go`](../internal/task/git.go) shells out to `git`. `go-git` is a known source of subtle divergence from real git in auth, credential helpers, and shallow-clone edge cases, and this code deliberately runs git on the host where the token lives. Shelling out is the defensible choice, not a gap.
 
+## Considered and rejected
+
+- **`testcontainers-go` for the Docker tests** - spins real containers, so it conflicts with the rule that no test reaches the network. The Docker fake answers on a unix socket in [`fake_test.go`](../internal/sandbox/fake_test.go), which is the cheaper, faster path.
+- **`muhammadmuzzammil1998/jsonc`** - an alternative JSONC parser, but unmaintained and narrower than `hujson`, which also handles trailing commas. Prefer `hujson`.
+- **Agent-loop alternatives (`langchaingo`, `google/adk-go`, `openai-openai-go`)** - moot now that eino is the choice. Note the repository already imports `cloudwego/eino/adk`, which is eino's own ADK layer, not Google's `google/adk-go`; the two share a name but nothing else.
+
 ## Feature gap, not a replacement
 
 ### Terminal -> readline
