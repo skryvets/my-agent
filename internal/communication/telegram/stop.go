@@ -11,7 +11,7 @@ func (b *Bot) stop(ctx context.Context, chatID int64) {
 	b.mu.Unlock()
 
 	dropped := drain(queue)
-	if cancel == nil && dropped == 0 {
+	if cancel == nil && !dropped {
 		b.reply(ctx, chatID, "Nothing to stop.")
 		return
 	}
@@ -37,13 +37,13 @@ func (b *Bot) begin(ctx context.Context, chatID int64) (context.Context, func())
 	}
 }
 
-// drain empties a queue without waiting and says how many messages it held.
-func drain(queue chan string) int {
-	dropped := 0
+// drain empties a queue without waiting and reports whether it held anything.
+func drain(queue chan string) bool {
+	dropped := false
 	for {
 		select {
 		case <-queue:
-			dropped++
+			dropped = true
 		default:
 			return dropped
 		}
