@@ -322,7 +322,7 @@ directory that is mounted at the same path inside and outside it.
 
 ## Configuration
 
-The model is set by the `MY_AGENT_MODEL` environment variable. The agent reads it at startup; if unset `Model` is the empty string and OpenRouter uses its own default.
+The model is set by the `MY_AGENT_MODEL` environment variable. The agent reads it at startup; if unset the slug is the empty string and OpenRouter uses its own default.
 
 ## How a turn works
 

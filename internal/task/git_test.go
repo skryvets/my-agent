@@ -9,41 +9,15 @@ import (
 	"testing"
 )
 
-// newOrigin makes a repository on disk that a clone can be taken from, so no
-// test reaches the network.
-func newOrigin(t *testing.T) string {
-	t.Helper()
-
-	dir := t.TempDir()
-	work := filepath.Join(dir, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, args := range [][]string{
-		{"init", "--initial-branch=main"},
-		{"-c", "user.name=test", "-c", "user.email=t@e.st", "add", "-A"},
-		{"-c", "user.name=test", "-c", "user.email=t@e.st", "commit", "-m", "first"},
-	} {
-		cmd := exec.Command("git", append([]string{"-C", work}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-	return work
-}
-
 func TestGitClonesBranchesCommitsAndPushes(t *testing.T) {
-	origin := newOrigin(t)
+	// A local host stands in for github.com, so no test reaches the network.
+	host := newOriginAt(t, "skryvets", "my-agent")
+	origin := filepath.Join(host, "skryvets", "my-agent.git")
 	dir := filepath.Join(t.TempDir(), "checkout")
-	git := Git{Dir: dir}
+	git := Git{Dir: dir, Host: host}
 	ctx := context.Background()
 
-	// A local path stands in for the GitHub address the runner builds.
-	if err := git.cloneFrom(ctx, origin, "my-agent/1"); err != nil {
+	if err := git.Clone(ctx, Repo{Owner: "skryvets", Name: "my-agent"}, "my-agent/1"); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
 
@@ -84,12 +58,16 @@ func TestGitClonesBranchesCommitsAndPushes(t *testing.T) {
 }
 
 func TestGitKeepsTheTokenOutOfItsErrors(t *testing.T) {
-	git := Git{Dir: filepath.Join(t.TempDir(), "checkout"), Token: "gh-secret-token"}
-
-	// An address that does not exist, carrying the token where the GitHub
-	// one carries it. git names the address it failed on, so the error
+	// A host that does not exist, carrying the token where the GitHub
+	// address carries it. git names the address it failed on, so the error
 	// would repeat the token into a chat.
-	err := git.cloneFrom(context.Background(), "/nowhere/gh-secret-token/repo.git", "my-agent/1")
+	git := Git{
+		Dir:   filepath.Join(t.TempDir(), "checkout"),
+		Token: "gh-secret-token",
+		Host:  "/nowhere/gh-secret-token",
+	}
+
+	err := git.Clone(context.Background(), Repo{Owner: "skryvets", Name: "my-agent"}, "my-agent/1")
 	if err == nil {
 		t.Fatal("expected an error")
 	}

@@ -90,8 +90,8 @@ deploy/                              the systemd service and the script that ins
   argument. The task runner names it once with `conversation.WithKey`, and the
   sandbox reads it there
 - a connector declares the small interface it needs (`Agent`, `Tasks`) and main
-  passes the real thing in through an `Option`. That is how the bot starts a
-  task without the task knowing about Telegram
+  passes the real thing in as an argument of `Run`. That is how the bot starts a
+  task without the task knowing about Telegram. A nil `Tasks` turns `/task` off
 - a message or a task runs on a context that `/stop` cancels. Replies go out on
   the context of the bot, so the chat can still be answered after a stop
 - git and the GitHub API run in the agent process, never in the container. The

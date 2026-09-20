@@ -126,9 +126,7 @@ func newTestBot(fake *fakeTelegram, answer func(agent.History) (agent.Message, e
 
 func textUpdate(id, userID, chatID int64, text string) update {
 	msg := &message{Text: text}
-	msg.MessageID = id
 	msg.From.ID = userID
 	msg.Chat.ID = chatID
-	msg.Chat.Type = "private"
 	return update{UpdateID: id, Message: msg}
 }

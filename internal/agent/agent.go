@@ -28,8 +28,9 @@ const (
 	maxRetries = 3
 )
 
-// Model is the OpenRouter model slug every client uses unless told otherwise.
-var Model = os.Getenv("MY_AGENT_MODEL")
+// slug is the OpenRouter model every client answers with. An empty
+// MY_AGENT_MODEL leaves the choice to OpenRouter.
+var slug = os.Getenv("MY_AGENT_MODEL")
 
 // Message is one assistant turn.
 type Message struct {
@@ -46,12 +47,12 @@ type Client struct {
 	runner *adk.Runner
 }
 
-// New returns a client for Model that offers the given tools.
+// New returns a client for slug that offers the given tools.
 func New(ctx context.Context, apiKey string, tools ...tool.BaseTool) (*Client, error) {
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		BaseURL: baseURL,
 		APIKey:  apiKey,
-		Model:   Model,
+		Model:   slug,
 		// Reasoning is off on purpose. Switching it back on is this
 		// field and nothing else.
 		ExtraFields: map[string]any{"reasoning": map[string]any{"enabled": false}},
@@ -59,7 +60,7 @@ func New(ctx context.Context, apiKey string, tools ...tool.BaseTool) (*Client, e
 	if err != nil {
 		return nil, err
 	}
-	return newClient(ctx, Model, chatModel, tools...)
+	return newClient(ctx, slug, chatModel, tools...)
 }
 
 // newClient builds the eino agent over any chat model, which is how a test
