@@ -7,11 +7,13 @@ asks the model again. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot), which polls and speaks
 the Bot API. The dev containers run on
 [moby/moby/client](https://github.com/moby/moby/tree/master/client), the Docker
-Engine client. `go.mod` requires eino, the eino OpenAI model, go-telegram/bot,
-moby/moby/client with its api module, and tailscale/hujson, and nothing else.
-Everything below `internal/devcontainer` and `internal/task` stays on the
-standard library, except the JSONC reader of `internal/devcontainer`, which is
-hujson.
+Engine client. The GitHub calls run on
+[google/go-github](https://github.com/google/go-github). `go.mod` requires eino,
+the eino OpenAI model, go-telegram/bot, moby/moby/client with its api module,
+google/go-github, and tailscale/hujson, and nothing else. Everything below
+`internal/devcontainer` stays on the standard library, except the JSONC reader,
+which is hujson. `internal/task` stays on the standard library except
+`github.go`, which calls GitHub through go-github.
 
 ## Layout
 
@@ -36,7 +38,7 @@ internal/task/                       a job end to end, ending in a pull request
   work.go                            the stages of one run
   environment.go                     set up and release the dev container
   git.go                             git on the host, where the token is
-  github.go                          the REST calls that open the request
+  github.go                          the GitHub calls that open the request
   store.go                           the runs on disk
 internal/sandbox/                    one dev container for each task
   docker.go                          the Docker client, reading a build stream

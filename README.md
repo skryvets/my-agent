@@ -14,7 +14,9 @@ tools, the history and the stream. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot): it polls `getUpdates`,
 backs off, obeys `retry_after` and speaks the Bot API. The dev containers run
 on [moby/moby/client](https://github.com/moby/moby/tree/master/client), the Go
-client of the Docker Engine API.
+client of the Docker Engine API. The two GitHub calls, the default branch and
+the pull request, run on
+[google/go-github](https://github.com/google/go-github).
 
 The rest is the standard library, with one small exception:
 [tailscale/hujson](https://github.com/tailscale/hujson) strips the comments and
@@ -78,7 +80,7 @@ flowchart LR
     runner -->|bind the checkout| pool
     runner --> chat
     pool -->|"build, pull, exec"| dock
-    runner --> gh(["GitHub<br/>git, REST"])
+    runner --> gh(["GitHub<br/>git, go-github"])
 ```
 
 A connector depends on the agent, never the other way round.
@@ -238,7 +240,7 @@ What happens, and where:
 | read, change and test the code | the model, inside the container |
 | name the change | the model, with no tools |
 | commit and push the branch | the agent process, with the token |
-| open the pull request | the agent process, GitHub REST |
+| open the pull request | the agent process, go-github |
 
 **git and the GitHub API never run inside the container.** The model therefore
 never sees the token: it works on a checkout the agent lends it through a bind
