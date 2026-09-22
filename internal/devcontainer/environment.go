@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -48,27 +49,17 @@ func (c Config) expand(text string, container map[string]string) string {
 	return c.expandWith(text, container, c.Workspace())
 }
 
+// substitution matches the ${...} variables of devcontainer.json. An
+// unbraced $NAME and an unclosed ${ do not match, so they stay as written.
+var substitution = regexp.MustCompile(`\$\{([^}]*)\}`)
+
 // expandWith replaces ${...} variables. An empty workspace leaves the
 // workspace variables in place, because the workspace folder itself is being
 // read.
 func (c Config) expandWith(text string, container map[string]string, workspace string) string {
-	var out strings.Builder
-	for {
-		start := strings.Index(text, "${")
-		if start < 0 {
-			break
-		}
-		end := strings.IndexByte(text[start:], '}')
-		if end < 0 {
-			break
-		}
-		out.WriteString(text[:start])
-		name := text[start+2 : start+end]
-		out.WriteString(c.variable(name, container, workspace))
-		text = text[start+end+1:]
-	}
-	out.WriteString(text)
-	return out.String()
+	return substitution.ReplaceAllStringFunc(text, func(match string) string {
+		return c.variable(match[2:len(match)-1], container, workspace)
+	})
 }
 
 func (c Config) variable(name string, container map[string]string, workspace string) string {
