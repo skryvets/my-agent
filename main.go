@@ -18,7 +18,9 @@ import (
 
 func main() {
 	cli := flag.Bool("cli", false, "chat in the terminal instead of serving the Telegram bot")
-	stateDir := flag.String("state", "state", "the directory the task runs are written to")
+	// Default "taskState" is relative to the working directory: the WorkingDirectory
+	// of the systemd unit on the server, or wherever the binary is started by hand.
+	taskStateDir := flag.String("taskState", "taskState", "the directory the task runs are written to")
 	flag.Parse()
 
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
@@ -60,7 +62,7 @@ func main() {
 			Plain:   chat,
 			Sandbox: pool,
 			GitHub:  task.GitHub{Token: token},
-			Store:   task.Store{Dir: *stateDir},
+			Store:   task.Store{Dir: *taskStateDir},
 			Token:   token,
 		}
 	}

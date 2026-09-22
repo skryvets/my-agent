@@ -32,8 +32,8 @@
 **Q:** What does `/stop` stop?
 **A:** The current answer or `/task` of that chat only. The queued messages of the chat are dropped, the task container is removed, and the run is recorded with the state `stopped`. The bot and the other chats continue. A branch that was already pushed stays on GitHub.
 
-## -state
-**Q:** Is `-state` kept?
+## -taskState
+**Q:** Is `-taskState` kept?
 **A:** Yes. A restart still tells a chat about a task it stopped.
 
 ## When Docker is needed

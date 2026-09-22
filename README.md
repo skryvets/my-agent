@@ -256,7 +256,7 @@ cancelled, the container is removed, the run is recorded as `stopped`, and the
 messages that wait in that chat are dropped. A branch that was already pushed
 stays on GitHub.
 
-Every run is written to `-state` (`state` by default) at each step, so a
+Every run is written to `-taskState` (`taskState` by default) at each step, so a
 restart knows what was under way. A run it caught in the middle is marked and
 reported to its chat, with the branch it reached:
 
