@@ -12,6 +12,7 @@ import (
 	"github.com/skryvets/my-agent/internal/communication/telegram"
 	"github.com/skryvets/my-agent/internal/communication/terminal"
 	"github.com/skryvets/my-agent/internal/sandbox"
+	"github.com/skryvets/my-agent/internal/session"
 	"github.com/skryvets/my-agent/internal/task"
 	"github.com/skryvets/my-agent/internal/tools"
 )
@@ -40,7 +41,7 @@ func main() {
 		return
 	}
 
-	var tasks telegram.Tasks
+	var tasks session.Tasks
 	if token := os.Getenv("GITHUB_TOKEN"); token == "" {
 		log.Print("/task is off: GITHUB_TOKEN is not set")
 	} else {

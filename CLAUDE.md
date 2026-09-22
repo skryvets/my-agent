@@ -33,6 +33,9 @@ internal/devcontainer/               the environment a repository describes
   lifecycle.go                       the setup commands in their three forms
   environment.go                     the workspace, the environment, variables
 internal/conversation/               which conversation a call belongs to
+internal/session/                    one conversation, the same in every connector
+  session.go                         Session, Handle, the history and the commands
+  task.go                            the /task command
 internal/task/                       a job end to end, ending in a pull request
   task.go                            Runner, Start, the runs a restart caught
   work.go                            the stages of one run
@@ -51,9 +54,8 @@ internal/sandbox/                    one dev container for each task
   reaper.go                          throw away what went quiet
 internal/communication/telegram/     Telegram bot connector, the default
   telegram.go                        Run, the go-telegram bot, configuration from the environment
-  task.go                            the /task command
+  chat.go                            per-chat goroutine and queue, one session for each chat
   stop.go                            the /stop command
-  session.go                         per-chat goroutine, commands, history
   text.go                            splitting an answer to fit a message
 internal/communication/terminal/     stdin and stdout connector, -cli
 deploy/                              the systemd service and the script that installs it
@@ -63,14 +65,19 @@ deploy/                              the systemd service and the script that ins
 
 - `internal/communication/*` depends on `internal/agent`, never the reverse.
   Nothing under `internal/` imports `main`
-- a connector takes the `Agent` interface (`Model() string`, `Chat(ctx, history,
-  stream)`), declared in the connector that consumes it. Adding a connector is a
-  new folder here plus a branch in `main.go` - do not touch `internal/agent`
-- conversation state is `agent.History`, a slice of eino `*schema.Message`.
-  Build turns with `WithUser`, `WithAssistant`, `DropLast` and `Trim` rather
-  than assembling messages in a connector. `Chat` returns the answer as text:
-  the tool calls of a turn stay inside eino, because a chat offers no tools
-  and a task asks one question only
+- a connector reads messages and sends replies, nothing more. Everything a
+  person can say - a chat turn, `/help`, `/reset`, `/task` - is answered by
+  `session.Session`, so the terminal and Telegram behave the same. Adding a
+  connector is a new folder here that makes one `Session` for each person it
+  talks to, plus a branch in `main.go` - do not touch `internal/agent`
+- `session` declares the `Agent` interface (`Model() string`, `Chat(ctx,
+  history, stream)`) and the `Tasks` interface it needs, and main passes the
+  real thing in. A nil `Tasks` turns `/task` off
+- conversation state is `agent.History`, a slice of eino `*schema.Message`,
+  owned by the `Session`. Build turns with `WithUser`, `WithAssistant`,
+  `DropLast` and `Trim` rather than assembling messages. `Chat` returns the
+  answer as text: the tool calls of a turn stay inside eino, because a chat
+  offers no tools and a task asks one question only
 - a tool is a constructor in `internal/tools` that returns an eino
   `tool.BaseTool`, built with `utils.InferTool` from an arguments struct with
   `jsonschema` tags. Adding one is a new file there plus a line in `main.go` -
@@ -92,11 +99,10 @@ deploy/                              the systemd service and the script that ins
 - which conversation a call belongs to travels in the context, not in an
   argument. The task runner names it once with `conversation.WithKey`, and the
   sandbox reads it there
-- a connector declares the small interface it needs (`Agent`, `Tasks`) and main
-  passes the real thing in as an argument of `Run`. That is how the bot starts a
-  task without the task knowing about Telegram. A nil `Tasks` turns `/task` off
-- a message or a task runs on a context that `/stop` cancels. Replies go out on
-  the context of the bot, so the chat can still be answered after a stop
+- in Telegram a message or a task runs on a context that `/stop` cancels.
+  Replies go out on the context of the bot, so the chat can still be answered
+  after a stop. A `Session` keeps quiet about a turn its context ended,
+  because the stop was answered already
 - the poll loop, its backoff and its `retry_after` belong to go-telegram/bot.
   The bot registers one default handler and runs it with
   `WithNotAsyncHandlers`, so the messages of a chat reach its queue in order.
@@ -135,7 +141,9 @@ points `bot.New` at the fake with `WithServerURL` and `WithSkipGetMe`. The Docke
 socket in `internal/sandbox/fake_test.go`, and takes over the connection of an
 exec start the way the daemon does. `internal/agent/fake_test.go` holds
 `fakeModel`, a scripted `model.BaseChatModel` that `newClient` takes in place
-of OpenRouter. No test reaches the network.
+of OpenRouter. `internal/session/fake_test.go` holds the `fakeAgent` and
+`fakeTasks` a session is tested against; the connector tests only check that a
+message reaches a session and a reply comes back. No test reaches the network.
 
 ## Deployment
 

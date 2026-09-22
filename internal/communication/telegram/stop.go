@@ -6,7 +6,7 @@ import "context"
 // chat, because the queue waits behind the very message it has to stop.
 func (b *Bot) stop(ctx context.Context, chatID int64) {
 	b.mu.Lock()
-	queue := b.sessions[chatID]
+	queue := b.queues[chatID]
 	cancel := b.working[chatID]
 	b.mu.Unlock()
 

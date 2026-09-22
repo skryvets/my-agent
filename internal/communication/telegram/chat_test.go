@@ -2,17 +2,16 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/go-telegram/bot/models"
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/task"
 )
 
-func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
+func TestServeAnswersInOrderWithTypingAction(t *testing.T) {
 	fake := newFakeTelegram(t)
 	var seen []agent.History
 	bot := newTestBot(fake, func(history agent.History) (string, error) {
@@ -32,14 +31,9 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 		t.Fatalf("reply = %q", got)
 	}
 
-	if len(seen) != 2 || len(seen[1]) != 3 {
+	// The session of the chat kept the history between the two.
+	if len(seen) != 2 || len(seen[1]) != 3 || seen[1][1].Content != "answer 1" {
 		t.Fatalf("history = %#v", seen)
-	}
-	if seen[1][0].Content != "first" || seen[1][1].Content != "answer 1" || seen[1][2].Content != "second" {
-		t.Errorf("history = %#v", seen[1])
-	}
-	if seen[1][1].Role != schema.Assistant {
-		t.Errorf("assistant turn = %#v", seen[1][1])
 	}
 
 	methods := fake.methods()
@@ -51,63 +45,17 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 	}
 }
 
-func TestServeReportsFailedTurnAndDropsIt(t *testing.T) {
+func TestServeAnswersWhenTheTypingActionFails(t *testing.T) {
 	fake := newFakeTelegram(t)
-	var seen []agent.History
-	bot := newTestBot(fake, func(history agent.History) (string, error) {
-		seen = append(seen, append(agent.History(nil), history...))
-		if len(seen) == 1 {
-			return "", errors.New("rate limited")
-		}
-		return "ok", nil
-	})
+	fake.refuseActions = true
+	bot := newTestBot(fake, func(agent.History) (string, error) { return "still here", nil })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "boom"))
-	if got := fake.nextSent(t); !strings.Contains(got, "rate limited") {
-		t.Fatalf("reply = %q", got)
-	}
-	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "retry"))
-	if got := fake.nextSent(t); got != "ok" {
-		t.Fatalf("reply = %q", got)
-	}
-	if len(seen[1]) != 1 || seen[1][0].Content != "retry" {
-		t.Errorf("failed turn was kept: %#v", seen[1])
-	}
-}
-
-func TestServeHandlesCommands(t *testing.T) {
-	fake := newFakeTelegram(t)
-	var seen []agent.History
-	bot := newTestBot(fake, func(history agent.History) (string, error) {
-		seen = append(seen, append(agent.History(nil), history...))
-		return "answer", nil
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/start"))
-	got := fake.nextSent(t)
-	if !strings.Contains(got, "/reset") {
-		t.Fatalf("start reply = %q", got)
-	}
-	if !strings.Contains(got, "test-model") {
-		t.Errorf("help does not name the model: %q", got)
-	}
-	bot.dispatch(ctx, nil, textUpdate(2, 42, 99, "hello"))
-	fake.nextSent(t)
-	bot.dispatch(ctx, nil, textUpdate(3, 42, 99, "/reset"))
-	if got := fake.nextSent(t); got != "Conversation cleared." {
-		t.Fatalf("reset reply = %q", got)
-	}
-	bot.dispatch(ctx, nil, textUpdate(4, 42, 99, "again"))
-	fake.nextSent(t)
-
-	if len(seen) != 2 || len(seen[1]) != 1 {
-		t.Errorf("history was not cleared: %#v", seen)
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "hello"))
+	if got := fake.nextSent(t); got != "still here" {
+		t.Errorf("reply = %q", got)
 	}
 }
 
@@ -148,6 +96,54 @@ func TestDispatchTellsSenderWhenQueueIsFull(t *testing.T) {
 	}
 }
 
+func TestTaskRunsInTheChatAndReportsToIt(t *testing.T) {
+	fake := newFakeTelegram(t)
+	tasks := &fakeTasks{lines: []string{"Cloning skryvets/my-agent", "Pull request open: https://example.com/pull/7"}}
+	bot := newTestBot(fake, nil)
+	bot.tasks = tasks
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bot.dispatch(ctx, nil, textUpdate(1, 42, 99, "/task skryvets/my-agent fix the lint warning"))
+
+	if got := fake.nextSent(t); got != "Cloning skryvets/my-agent" {
+		t.Errorf("first line = %q", got)
+	}
+	if got := fake.nextSent(t); !strings.Contains(got, "pull/7") {
+		t.Errorf("last line = %q", got)
+	}
+	chat, repository, instruction := tasks.seen()
+	if chat != "99" || repository != "skryvets/my-agent" || instruction != "fix the lint warning" {
+		t.Errorf("run of %q in chat %q: %q", repository, chat, instruction)
+	}
+}
+
+func TestReportInterruptedTellsEachChat(t *testing.T) {
+	fake := newFakeTelegram(t)
+	bot := newTestBot(fake, nil)
+
+	// With /task off there is nothing to report.
+	bot.reportInterrupted(context.Background())
+	fake.expectNoSend(t)
+
+	bot.tasks = &fakeTasks{lost: []task.Run{
+		{ID: "1", Chat: "99", Repo: "skryvets/my-agent", Instruction: "fix it", Branch: "my-agent/1", State: task.Interrupted},
+		{ID: "2", Chat: "not-a-chat", Repo: "a/b"},
+	}}
+
+	bot.reportInterrupted(context.Background())
+
+	got := fake.nextSent(t)
+	if !strings.Contains(got, "skryvets/my-agent") || !strings.Contains(got, "my-agent/1") {
+		t.Errorf("reply = %q", got)
+	}
+	if got := fake.calls[0].Form["chat_id"]; got != "99" {
+		t.Errorf("chat_id = %q", got)
+	}
+	fake.expectNoSend(t)
+}
+
 func TestReplySplitsLongText(t *testing.T) {
 	fake := newFakeTelegram(t)
 	bot := newTestBot(fake, nil)
@@ -159,8 +155,5 @@ func TestReplySplitsLongText(t *testing.T) {
 	}
 	if second := fake.nextSent(t); second != "tail" {
 		t.Errorf("second part = %q", second)
-	}
-	if got := fake.calls[0].Form["chat_id"]; got != "99" {
-		t.Errorf("chat_id = %q", got)
 	}
 }

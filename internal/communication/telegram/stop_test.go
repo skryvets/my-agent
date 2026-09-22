@@ -119,7 +119,7 @@ func TestStopDropsAQueueThatWaits(t *testing.T) {
 	bot := newTestBot(fake, nil)
 	queue := make(chan string, queueSize)
 	queue <- "waiting"
-	bot.sessions[99] = queue
+	bot.queues[99] = queue
 
 	bot.stop(context.Background(), 99)
 	if got := fake.nextSent(t); got != "Stopped." {

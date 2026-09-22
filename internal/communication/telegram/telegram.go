@@ -1,16 +1,14 @@
-// Package telegram serves the agent as a Telegram bot, keeping one
-// conversation per chat.
+// Package telegram serves the agent as a Telegram bot, with one session for
+// each chat.
 //
 // Run wires the bot from the environment. github.com/go-telegram/bot polls
-// getUpdates and speaks the Bot API; the per-chat conversations are in
-// session.go.
+// getUpdates and speaks the Bot API; the queue of each chat is in chat.go.
 package telegram
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strconv"
@@ -18,38 +16,24 @@ import (
 	"sync"
 
 	"github.com/go-telegram/bot"
-	"github.com/skryvets/my-agent/internal/agent"
-	"github.com/skryvets/my-agent/internal/task"
+	"github.com/skryvets/my-agent/internal/session"
 )
 
-// Agent answers a conversation. *agent.Client satisfies it.
-type Agent interface {
-	Model() string
-	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
-}
-
-// Tasks does a coding job end to end and opens a pull request.
-// *task.Runner satisfies it.
-type Tasks interface {
-	Start(ctx context.Context, chat, repository, instruction string, report task.Report) error
-	Interrupted(ctx context.Context) []task.Run
-}
-
-// Bot hands each message to the session of its chat.
+// Bot hands each message to the queue of its chat.
 type Bot struct {
 	api     *bot.Bot
-	agent   Agent
-	tasks   Tasks
+	agent   session.Agent
+	tasks   session.Tasks
 	allowed map[int64]bool
 
-	mu       sync.Mutex
-	sessions map[int64]chan string
-	working  map[int64]context.CancelFunc
+	mu      sync.Mutex
+	queues  map[int64]chan string
+	working map[int64]context.CancelFunc
 }
 
 // Run reads the bot configuration from the environment and serves until ctx is
 // cancelled. A nil tasks answers /task with the reason it is off.
-func Run(ctx context.Context, model Agent, tasks Tasks) error {
+func Run(ctx context.Context, model session.Agent, tasks session.Tasks) error {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		return errors.New("TELEGRAM_BOT_TOKEN is not set")
@@ -58,17 +42,8 @@ func Run(ctx context.Context, model Agent, tasks Tasks) error {
 	if err != nil {
 		return err
 	}
-	if len(allowed) == 0 {
-		log.Print("warning: TELEGRAM_ALLOWED_USERS is empty, anyone who finds the bot can spend your OpenRouter credits")
-	}
 
-	b := &Bot{
-		agent:    model,
-		tasks:    tasks,
-		allowed:  allowed,
-		sessions: map[int64]chan string{},
-		working:  map[int64]context.CancelFunc{},
-	}
+	b := newBot(model, tasks, allowed)
 	// The handlers are not async, so the updates of a chat reach its queue in
 	// the order they arrived. dispatch only queues, so nothing waits here.
 	b.api, err = bot.New(token,
@@ -85,6 +60,36 @@ func Run(ctx context.Context, model Agent, tasks Tasks) error {
 	b.reportInterrupted(ctx)
 	b.api.Start(ctx)
 	return nil
+}
+
+// newBot is the bot before it has its API client, which Run builds from the
+// token and a test points at a fake.
+func newBot(model session.Agent, tasks session.Tasks, allowed map[int64]bool) *Bot {
+	if len(allowed) == 0 {
+		log.Print("warning: TELEGRAM_ALLOWED_USERS is empty, anyone who finds the bot can spend your OpenRouter credits")
+	}
+	return &Bot{
+		agent:   model,
+		tasks:   tasks,
+		allowed: allowed,
+		queues:  map[int64]chan string{},
+		working: map[int64]context.CancelFunc{},
+	}
+}
+
+// reportInterrupted tells each chat about the run a restart caught in the
+// middle.
+func (b *Bot) reportInterrupted(ctx context.Context) {
+	if b.tasks == nil {
+		return
+	}
+	for _, run := range b.tasks.Interrupted(ctx) {
+		chatID, err := strconv.ParseInt(run.Chat, 10, 64)
+		if err != nil {
+			continue
+		}
+		b.reply(ctx, chatID, session.Lost(run))
+	}
 }
 
 // Anyone can find a bot by its username, so without an allowlist strangers

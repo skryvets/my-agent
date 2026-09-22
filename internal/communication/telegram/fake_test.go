@@ -14,6 +14,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/task"
 )
 
 type apiCall struct {
@@ -29,6 +30,8 @@ type fakeTelegram struct {
 	mu    sync.Mutex
 	calls []apiCall
 	sent  chan string
+	// refuseActions answers sendChatAction with an error.
+	refuseActions bool
 }
 
 func newFakeTelegram(t *testing.T) *fakeTelegram {
@@ -49,6 +52,9 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		fake.mu.Unlock()
 
 		reply := `{"ok":true,"result":true}`
+		if method == "sendChatAction" && fake.refuseActions {
+			reply = `{"ok":false,"description":"no typing today"}`
+		}
 		if method == "sendMessage" {
 			fake.sent <- form["text"]
 			reply = `{"ok":true,"result":{"message_id":1}}`
@@ -100,6 +106,43 @@ func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (
 	return f.answer(history)
 }
 
+// fakeTasks records the run the bot asked for and reports back.
+type fakeTasks struct {
+	mu          sync.Mutex
+	chat        string
+	repository  string
+	instruction string
+	lines       []string
+	lost        []task.Run
+	// started, when it is set, is closed when a run begins, and the run then
+	// lasts until it is stopped.
+	started chan struct{}
+}
+
+func (f *fakeTasks) Start(ctx context.Context, chat, repository, instruction string, report task.Report) error {
+	f.mu.Lock()
+	f.chat, f.repository, f.instruction = chat, repository, instruction
+	f.mu.Unlock()
+
+	for _, line := range f.lines {
+		report(line)
+	}
+	if f.started != nil {
+		close(f.started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (f *fakeTasks) Interrupted(ctx context.Context) []task.Run { return f.lost }
+
+func (f *fakeTasks) seen() (chat, repository, instruction string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.chat, f.repository, f.instruction
+}
+
 func newTestBot(fake *fakeTelegram, answer func(agent.History) (string, error)) *Bot {
 	api, err := bot.New("test-token",
 		bot.WithServerURL(fake.server.URL),
@@ -109,12 +152,9 @@ func newTestBot(fake *fakeTelegram, answer func(agent.History) (string, error)) 
 	if err != nil {
 		panic(err)
 	}
-	return &Bot{
-		api:      api,
-		agent:    fakeAgent{answer: answer},
-		sessions: map[int64]chan string{},
-		working:  map[int64]context.CancelFunc{},
-	}
+	b := newBot(fakeAgent{answer: answer}, nil, nil)
+	b.api = api
+	return b
 }
 
 func textUpdate(id, userID, chatID int64, text string) *models.Update {
