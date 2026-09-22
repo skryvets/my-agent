@@ -106,8 +106,6 @@ func (f *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case path == "/version":
-		fmt.Fprint(w, `{"ApiVersion":"1.55"}`)
 	case path == "/containers/json":
 		f.writeOrphans(w)
 	case strings.HasPrefix(path, "/images/") && strings.HasSuffix(path, "/json"):
@@ -270,7 +268,7 @@ func (f *fakeDocker) query(request string) string {
 
 func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
 	t.Helper()
-	options.Socket = fake.socket
+	t.Setenv("DOCKER_HOST", "unix://"+fake.socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

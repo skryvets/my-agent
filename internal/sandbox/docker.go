@@ -16,11 +16,10 @@ import (
 // everything back to 1.40, so an old daemon still answers.
 const apiVersion = "v1.43"
 
-// DefaultSocket is where the Docker Engine listens on Linux and on macOS.
-const DefaultSocket = "/var/run/docker.sock"
-
-func newDocker(socket string) (*client.Client, error) {
-	return client.New(client.WithHost("unix://"+socket), client.WithAPIVersion(apiVersion))
+// newDocker reaches the daemon at DOCKER_HOST, or at /var/run/docker.sock
+// when it is not set, as the docker command does.
+func newDocker() (*client.Client, error) {
+	return client.New(client.FromEnv, client.WithAPIVersion(apiVersion))
 }
 
 // progressTail is how much of a failed build is kept to say why it failed.

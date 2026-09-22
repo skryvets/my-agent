@@ -296,7 +296,7 @@ Details worth knowing:
 ## Deploying
 
 The bot has no HTTP server, so it needs no port. `/task` needs a Docker daemon
-the agent can reach at `/var/run/docker.sock`, so the bot runs on a machine
+the agent can reach at `/var/run/docker.sock` or at `DOCKER_HOST`, so the bot runs on a machine
 with Docker: a VM or a server, not a platform that gives a service no socket.
 
 On an Ubuntu server with Go, git and Docker Engine, run the script from the

@@ -34,3 +34,13 @@
 **Q:** Does a write change?
 **A:** `CopyToContainer` sends `noOverwriteDirNonDir=true` by default, so a file cannot replace a directory of the same name. The raw request did not send it. The stricter behavior is kept.
 **Source:** model (2026-09-21)
+
+## The address of the daemon
+**Q:** How does the agent find the daemon?
+**A:** `client.FromEnv` reads `DOCKER_HOST`, as the docker command does, and falls back to `/var/run/docker.sock`. `Options.Socket` and `DefaultSocket` are gone. The tests set `DOCKER_HOST` to the socket of the fake. `WithAPIVersion` comes after `FromEnv`, so `DOCKER_API_VERSION` does not unpin the version.
+**Source:** model (2026-09-21)
+
+## The first request
+**Q:** Does `New` still ask the daemon for its version?
+**A:** No. The sweep of the orphans is the first request, and it fails the same way when the daemon is not there.
+**Source:** model (2026-09-21)
