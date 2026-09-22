@@ -49,5 +49,5 @@
 
 ## The rest of the project
 **Q:** Does `internal/sandbox` move to the Docker SDK?
-**A:** No. One library for the agentic work is the whole budget. The Docker Engine API stays on `net/http` and its own `DialContext`, and `internal/devcontainer` stays on `encoding/json`.
+**A:** No. One library for the agentic work is the whole budget. The Docker Engine API stays on `net/http` and its own `DialContext`. `internal/devcontainer` keeps `encoding/json` for unmarshaling, with `tailscale/hujson` stripping the comments and trailing commas (see `hujson-jsonc.md`).
 **Source:** model (2026-09-19)

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tailscale/hujson"
 )
 
 // ErrMissing is a repository that says nothing about its environment.
@@ -60,8 +62,13 @@ func Load(root string) (Config, error) {
 	}
 	name, _ := filepath.Rel(root, file)
 
+	data, err = hujson.Standardize(data)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %v", name, err)
+	}
+
 	var config Config
-	if err := json.Unmarshal(standardize(data), &config); err != nil {
+	if err := json.Unmarshal(data, &config); err != nil {
 		return Config{}, fmt.Errorf("%s: %v", name, err)
 	}
 	config.Root, config.File = root, file

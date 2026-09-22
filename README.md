@@ -14,10 +14,12 @@ tools, the history and the stream. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot): it polls `getUpdates`,
 backs off, obeys `retry_after` and speaks the Bot API.
 
-The rest is the standard library, and it shows four things that are easy to get
-right only once:
+The rest is the standard library, with one small exception:
+[tailscale/hujson](https://github.com/tailscale/hujson) strips the comments and
+trailing commas from `devcontainer.json` before `encoding/json` reads it. Four
+things here are easy to get right only once:
 
-- reading `devcontainer.json`, which is JSON with comments, with nothing but `encoding/json`
+- reading `devcontainer.json`, which is JSON with comments, through `hujson`
 - driving the Docker Engine API over its unix socket with nothing but `net/http`, to build or pull that dev container and run the tools inside it
 - keeping the GitHub token out of the container, so the model never sees it
 - stopping a run from the phone half way through, without losing the chat
