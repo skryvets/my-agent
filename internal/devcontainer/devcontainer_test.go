@@ -157,3 +157,32 @@ func TestBuildPathsAreRelativeToTheFile(t *testing.T) {
 		t.Error("a build with no args has args")
 	}
 }
+
+func TestLoadKeepsCommentMarkersInsideStrings(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, ".devcontainer.json", `{
+		"image": "x",
+		"remoteEnv": {"URL": "https://example.com/a//b", "GLOB": "/* keep */"},
+		"postCreateCommand": "echo \"// not a comment\""
+	}`)
+
+	config, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.RemoteEnv["URL"] != "https://example.com/a//b" || config.RemoteEnv["GLOB"] != "/* keep */" {
+		t.Errorf("remoteEnv = %#v", config.RemoteEnv)
+	}
+	if !reflect.DeepEqual(config.PostCreateCommand, Command{{"sh", "-c", `echo "// not a comment"`}}) {
+		t.Errorf("postCreateCommand = %#v", config.PostCreateCommand)
+	}
+}
+
+func TestLoadRefusesAFileWithAnUnclosedComment(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, ".devcontainer.json", `{"image": "x"} /* open`)
+	_, err := Load(root)
+	if err == nil || !strings.Contains(err.Error(), ".devcontainer.json") {
+		t.Errorf("err = %v, want the name of the file", err)
+	}
+}
