@@ -16,7 +16,7 @@ func TestNewReachesTheDaemonAndClearsAnEarlierRun(t *testing.T) {
 
 	newTestPool(t, fake, Options{})
 
-	if !fake.asked("GET /version") {
+	if !fake.asked("GET /containers/json") {
 		t.Error("the daemon was not reached")
 	}
 	if !fake.asked("DELETE /containers/left-over-01") {
@@ -28,7 +28,8 @@ func TestNewReachesTheDaemonAndClearsAnEarlierRun(t *testing.T) {
 }
 
 func TestNewReportsADaemonThatIsNotThere(t *testing.T) {
-	if _, err := New(context.Background(), Options{Socket: "/nowhere/docker.sock"}); err == nil {
+	t.Setenv("DOCKER_HOST", "unix:///nowhere/docker.sock")
+	if _, err := New(context.Background(), Options{}); err == nil {
 		t.Fatal("expected an error")
 	}
 }
@@ -36,8 +37,9 @@ func TestNewReportsADaemonThatIsNotThere(t *testing.T) {
 func TestNewReportsWhatTheDaemonRefuses(t *testing.T) {
 	fake := newFakeDocker(t)
 	fake.fail = "/containers/json"
+	t.Setenv("DOCKER_HOST", "unix://"+fake.socket)
 
-	_, err := New(context.Background(), Options{Socket: fake.socket})
+	_, err := New(context.Background(), Options{})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -62,7 +64,7 @@ func TestBindStartsTheDevContainerOnTheCheckout(t *testing.T) {
 			t.Errorf("the container was created without %s: %s", want, body)
 		}
 	}
-	if strings.Contains(body, "NetworkMode") {
+	if strings.Contains(body, `"NetworkMode":"none"`) {
 		t.Errorf("the container was cut off the network: %s", body)
 	}
 

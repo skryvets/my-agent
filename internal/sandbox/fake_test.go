@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -98,14 +99,13 @@ func (f *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 
 	if failing != "" && path == failing {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, `{"message":"the daemon says no"}`)
 		return
 	}
 
 	switch {
-	case path == "/version":
-		fmt.Fprint(w, `{"ApiVersion":"1.55"}`)
 	case path == "/containers/json":
 		f.writeOrphans(w)
 	case strings.HasPrefix(path, "/images/") && strings.HasSuffix(path, "/json"):
@@ -167,11 +167,20 @@ func (f *fakeDocker) writeImage(w http.ResponseWriter, path string) {
 	fmt.Fprint(w, `{"Id":"image-1"}`)
 }
 
+// writeOutput answers an exec start the way the daemon does: it takes over
+// the connection and streams the output raw until the command ends.
 func (f *fakeDocker) writeOutput(w http.ResponseWriter) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	w.Header().Set("Content-Type", "application/vnd.docker.raw-stream")
-	fmt.Fprint(w, f.output)
+	output := f.output
+	f.mu.Unlock()
+
+	conn, buffered, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	fmt.Fprint(buffered, "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n"+output)
+	buffered.Flush()
 }
 
 func (f *fakeDocker) writeExit(w http.ResponseWriter) {
@@ -214,6 +223,8 @@ func (f *fakeDocker) archive(w http.ResponseWriter, r *http.Request) {
 	}
 	writer.Close()
 
+	stat := base64.StdEncoding.EncodeToString([]byte(`{"name":"` + filepath.Base(path) + `"}`))
+	w.Header().Set("X-Docker-Container-Path-Stat", stat)
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Write(archive.Bytes())
 }
@@ -257,7 +268,7 @@ func (f *fakeDocker) query(request string) string {
 
 func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
 	t.Helper()
-	options.Socket = fake.socket
+	t.Setenv("DOCKER_HOST", "unix://"+fake.socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

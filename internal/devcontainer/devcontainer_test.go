@@ -150,7 +150,7 @@ func TestBuildPathsAreRelativeToTheFile(t *testing.T) {
 	if got := config.Dockerfile(); got != filepath.Join(root, ".devcontainer", "Dockerfile") {
 		t.Errorf("dockerfile = %q", got)
 	}
-	if got := config.BuildArgs(); got["VARIANT"] != "bookworm" {
+	if got := config.BuildArgs(); got["VARIANT"] == nil || *got["VARIANT"] != "bookworm" {
 		t.Errorf("args = %#v, want the default and never the host value", got)
 	}
 	if (Config{}).BuildArgs() != nil {
