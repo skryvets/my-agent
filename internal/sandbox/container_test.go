@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"archive/tar"
-	"bytes"
 	"io"
 	"strings"
 	"testing"
@@ -159,15 +158,5 @@ func TestResolveReadsAPathAgainstTheWorkingDirectory(t *testing.T) {
 func TestShellQuoteSurvivesAQuote(t *testing.T) {
 	if got := shellQuote("/work/it's"); got != `'/work/it'\''s'` {
 		t.Errorf("shellQuote = %s", got)
-	}
-}
-
-func TestJSONBodyFallsBackWhenTheValueCannotBeEncoded(t *testing.T) {
-	body, err := io.ReadAll(jsonBody(make(chan int)))
-	if err != nil {
-		t.Fatalf("reading the body: %v", err)
-	}
-	if !bytes.Equal(body, []byte("{}")) {
-		t.Errorf("body = %s", body)
 	}
 }

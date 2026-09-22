@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"sync"
 	"time"
+
+	"github.com/moby/moby/client"
 
 	"github.com/skryvets/my-agent/internal/conversation"
 	"github.com/skryvets/my-agent/internal/devcontainer"
@@ -26,7 +27,7 @@ type Options struct {
 // Workspace the tools need, and reads the conversation out of the context of
 // each call.
 type Pool struct {
-	docker *docker
+	docker *client.Client
 	idle   time.Duration
 
 	mu      sync.Mutex
@@ -45,8 +46,12 @@ func New(ctx context.Context, options Options) (*Pool, error) {
 	if socket == "" {
 		socket = DefaultSocket
 	}
+	docker, err := newDocker(socket)
+	if err != nil {
+		return nil, err
+	}
 	pool := &Pool{
-		docker:  newDocker(socket),
+		docker:  docker,
 		idle:    options.Idle,
 		running: make(map[string]*entry),
 	}
@@ -54,7 +59,7 @@ func New(ctx context.Context, options Options) (*Pool, error) {
 		pool.idle = DefaultIdle
 	}
 
-	if err := pool.docker.call(ctx, http.MethodGet, "/version", nil, nil); err != nil {
+	if _, err := pool.docker.ServerVersion(ctx, client.ServerVersionOptions{}); err != nil {
 		return nil, err
 	}
 	if err := pool.sweepOrphans(ctx); err != nil {

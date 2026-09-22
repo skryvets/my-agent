@@ -12,7 +12,9 @@ streamed `tool_calls` fragments, runs a round of tools, tries a failed model
 call again and asks the model until it answers in words. The agent supplies the
 tools, the history and the stream. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot): it polls `getUpdates`,
-backs off, obeys `retry_after` and speaks the Bot API.
+backs off, obeys `retry_after` and speaks the Bot API. The dev containers run
+on [moby/moby/client](https://github.com/moby/moby/tree/master/client), the Go
+client of the Docker Engine API.
 
 The rest is the standard library, with one small exception:
 [tailscale/hujson](https://github.com/tailscale/hujson) strips the comments and
@@ -20,7 +22,7 @@ trailing commas from `devcontainer.json` before `encoding/json` reads it. Four
 things here are easy to get right only once:
 
 - reading `devcontainer.json`, which is JSON with comments, through `hujson`
-- driving the Docker Engine API over its unix socket with nothing but `net/http`, to build or pull that dev container and run the tools inside it
+- driving the Docker Engine over its unix socket, to build or pull that dev container and run the tools inside it
 - keeping the GitHub token out of the container, so the model never sees it
 - stopping a run from the phone half way through, without losing the chat
 
@@ -175,7 +177,7 @@ What the agent does with the file:
 | Property | What happens |
 | --- | --- |
 | `image` | pulled, unless the daemon already has it |
-| `build.dockerfile`, `build.context`, `build.args`, `build.target` | built through `POST /build`, with the context sent as a tar |
+| `build.dockerfile`, `build.context`, `build.args`, `build.target` | built through `ImageBuild`, with the context sent as a tar |
 | `workspaceFolder` | where the checkout is mounted, `/workspaces/<repository>` by default |
 | `containerEnv`, `containerUser` | set on the container |
 | `remoteEnv`, `remoteUser` | set on every command the tools run |
@@ -196,11 +198,11 @@ The container of a task:
 | the agent stops | every container it started is removed |
 | the agent starts | the containers of an earlier run are removed |
 
-`internal/sandbox` speaks the Docker Engine API itself, over the unix socket,
-with `net/http` and its own `DialContext`, rather than with the Docker SDK. The
-calls it makes: pull or build an image, create and start a
-container, create and start an exec, and put or get a tar through the archive
-endpoint, because the API has no endpoint that takes a plain file.
+`internal/sandbox` speaks the Docker Engine API over the unix socket through
+`moby/moby/client`, with the API version pinned. The calls it makes: pull or
+build an image, create and start a container, create and attach an exec, and
+put or get a tar through the archive endpoint, because the API has no endpoint
+that takes a plain file.
 
 This repository describes itself in `.devcontainer/devcontainer.json`, with
 `golang:1.26`.

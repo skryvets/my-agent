@@ -62,7 +62,7 @@ func TestBindStartsTheDevContainerOnTheCheckout(t *testing.T) {
 			t.Errorf("the container was created without %s: %s", want, body)
 		}
 	}
-	if strings.Contains(body, "NetworkMode") {
+	if strings.Contains(body, `"NetworkMode":"none"`) {
 		t.Errorf("the container was cut off the network: %s", body)
 	}
 
