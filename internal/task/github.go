@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 )
 
 // Repo names one repository on GitHub.
@@ -61,10 +61,10 @@ func (g GitHub) OpenPullRequest(ctx context.Context, repo Repo, title, head, bas
 	if err != nil {
 		return "", err
 	}
-	pull, _, err := client.PullRequests.Create(ctx, repo.Owner, repo.Name, &github.NewPullRequest{
+	pull, _, err := client.PullRequests.Create(ctx, repo.Owner, repo.Name, github.CreatePullRequest{
 		Title: github.Ptr(title),
-		Head:  github.Ptr(head),
-		Base:  github.Ptr(base),
+		Head:  head,
+		Base:  base,
 		Body:  github.Ptr(body),
 	})
 	if err != nil {
