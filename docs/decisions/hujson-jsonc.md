@@ -15,10 +15,10 @@
 **A:** `internal/devcontainer/jsonc.go` and `jsonc_test.go`. `hujson.Standardize` replaces the `standardize` call in `devcontainer.go`; `encoding/json` still reads the result into `Config`.
 **Source:** model (2026-09-21)
 
-## Malformed input now errors
+## A trailing unclosed comment is now refused
 **Q:** The old tokenizer never returned an error. What changes?
-**A:** `hujson.Standardize` reports invalid HuJSON, so a file with an unclosed comment, string or array reaches `Load` as an error carrying the file name, the same way invalid JSON already did. The old tokenizer returned partial output and left `json.Unmarshal` to fail downstream. The visible result is unchanged: the file is refused and the chat is told which file it was.
-**Source:** assumed (2026-09-21)
+**A:** `hujson.Standardize` reports invalid HuJSON. A file that ends in an unclosed block comment used to be accepted: the old tokenizer turned `{"a": 1} /* open` into `{"a": 1} `, which `json.Unmarshal` read and `Load` returned. It is refused now, with the file name in the error. An unclosed string or array was already refused, by `json.Unmarshal` after the tokenizer returned partial output. The stricter behavior is deliberate, and `TestLoadRefusesAFileWithAnUnclosedComment` pins it.
+**Source:** model (2026-09-21)
 
 ## The rest of the project
 **Q:** Does anything else move?
