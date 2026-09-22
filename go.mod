@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/cloudwego/eino v0.9.19
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
+	github.com/ergochat/readline v0.1.3
 	github.com/go-telegram/bot v1.27.0
 	github.com/google/go-github/v92 v92.0.0
 	github.com/moby/moby/api v1.56.0
@@ -60,5 +61,6 @@ require (
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
