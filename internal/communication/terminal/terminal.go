@@ -1,4 +1,4 @@
-// Package terminal chats with the agent over stdin and stdout.
+// Package terminal chats with the agent over stdin and stdout, in one session.
 package terminal
 
 import (
@@ -9,52 +9,54 @@ import (
 	"os"
 	"strings"
 
-	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/session"
 )
 
-// Agent answers a conversation. *agent.Client satisfies it.
-type Agent interface {
-	Model() string
-	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
+// key names the terminal in the runs it starts. There is one terminal, so it
+// never has to tell itself apart from another.
+const key = "terminal"
+
+// Run reads messages from stdin until end of input and streams each answer to
+// stdout. A nil tasks answers /task with the reason it is off.
+func Run(ctx context.Context, model session.Agent, tasks session.Tasks) error {
+	return run(ctx, model, tasks, os.Stdin, os.Stdout)
 }
 
-type session struct {
-	model  Agent
-	in     io.Reader
-	out    io.Writer
-	errOut io.Writer
-}
+func run(ctx context.Context, model session.Agent, tasks session.Tasks, in io.Reader, out io.Writer) error {
+	chat := &session.Session{
+		Agent:  model,
+		Tasks:  tasks,
+		Key:    key,
+		Reply:  func(text string) { fmt.Fprintln(out, text) },
+		Stream: out,
+	}
+	fmt.Fprintln(out, "Chat with "+model.Model()+". /help lists the commands. Ctrl-C or Ctrl-D to quit.")
+	reportInterrupted(ctx, chat)
 
-// Run reads questions from stdin until end of input and streams each answer to
-// stdout. A failed turn is reported and dropped, leaving the session alive.
-func Run(ctx context.Context, model Agent) error {
-	chat := &session{model: model, in: os.Stdin, out: os.Stdout, errOut: os.Stderr}
-	return chat.run(ctx)
-}
-
-func (s *session) run(ctx context.Context) error {
-	var history agent.History
-	input := bufio.NewScanner(s.in)
-	fmt.Fprintln(s.out, "Chat with "+s.model.Model()+". Ctrl-C or Ctrl-D to quit.")
-
+	input := bufio.NewScanner(in)
 	for {
-		fmt.Fprint(s.out, "\nyou> ")
+		fmt.Fprint(out, "\nyou> ")
 		if !input.Scan() {
 			break
 		}
-		question := strings.TrimSpace(input.Text())
-		if question == "" {
+		text := strings.TrimSpace(input.Text())
+		if text == "" {
 			continue
 		}
-
-		history = history.WithUser(question)
-		answer, err := s.model.Chat(ctx, history, s.out)
-		if err != nil {
-			fmt.Fprintf(s.errOut, "error: %v\n", err)
-			history = history.DropLast()
-			continue
-		}
-		history = history.WithAssistant(answer)
+		chat.Handle(ctx, text)
 	}
 	return input.Err()
+}
+
+// reportInterrupted tells the terminal about the run of its own that a
+// restart caught in the middle.
+func reportInterrupted(ctx context.Context, chat *session.Session) {
+	if chat.Tasks == nil {
+		return
+	}
+	for _, run := range chat.Tasks.Interrupted(ctx) {
+		if run.Chat == key {
+			chat.Reply(session.Lost(run))
+		}
+	}
 }

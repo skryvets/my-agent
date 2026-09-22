@@ -34,13 +34,6 @@ func main() {
 
 	chat := must(agent.New(ctx, apiKey))
 
-	if *cli {
-		if err := terminal.Run(ctx, chat); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-
 	var tasks session.Tasks
 	if token := os.Getenv("GITHUB_TOKEN"); token == "" {
 		log.Print("/task is off: GITHUB_TOKEN is not set")
@@ -68,7 +61,11 @@ func main() {
 		}
 	}
 
-	if err := telegram.Run(ctx, chat, tasks); err != nil {
+	serve := telegram.Run
+	if *cli {
+		serve = terminal.Run
+	}
+	if err := serve(ctx, chat, tasks); err != nil {
 		log.Fatal(err)
 	}
 }

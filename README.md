@@ -110,6 +110,11 @@ Type a message at the `you>` prompt and press enter. The whole conversation is s
 
 The answer streams in as it arrives. A failed turn prints the error and drops the unanswered message, leaving the session alive.
 
+The terminal and Telegram are two ways to reach the same `session.Session`,
+so the commands are the same in both: `/help`, `/reset`, and `/task` when
+`GITHUB_TOKEN` is set and Docker is there. In the terminal, Ctrl-C is the way
+to stop a run, because the terminal reads the next line only after the answer.
+
 A chat, in the terminal or in Telegram, offers the model no tools: it answers
 in words. Work on a repository goes through `/task`, in the dev container of
 that repository.
@@ -278,7 +283,7 @@ export GITHUB_TOKEN=github_pat_...
 go run .
 ```
 
-[go-telegram/bot](https://github.com/go-telegram/bot) long-polls `getUpdates` for `message` updates. The bot keeps one conversation per chat, and answers each message with the model. Commands:
+[go-telegram/bot](https://github.com/go-telegram/bot) long-polls `getUpdates` for `message` updates. The bot keeps one session per chat, and the session answers each message. Commands:
 
 - `/start`, `/help` - what the bot does
 - `/task owner/name what to change` - change a repository in its dev container and open a pull request
@@ -393,13 +398,15 @@ internal/agent/                      the model: the eino agent over OpenRouter, 
 internal/tools/                      what the agent can do in a dev container: shell, files
 internal/devcontainer/               the environment a repository describes for itself
 internal/conversation/               which conversation a call belongs to
+internal/session/                    one conversation and its commands, the same in every connector
 internal/task/                       a job end to end: clone, set up, work, push, open a pull request
 internal/sandbox/                    a Docker container for each task
 internal/communication/telegram/     Telegram bot connector, the default
 internal/communication/terminal/     stdin and stdout connector, with -cli
 ```
 
-A connector depends on the agent, never the other way round. Each one takes an
-`Agent` interface - `Model() string` and `Chat(ctx, history, stream)` - so a new
-connector is a new folder under `internal/communication` and a branch in
-`main.go`. `CLAUDE.md` has the file-by-file breakdown.
+A connector reads messages and sends replies, and a `session.Session` does
+the rest: it keeps the history and answers the commands. A new connector is a
+new folder under `internal/communication` that makes one `Session` for each
+person it talks to, and a branch in `main.go`. `CLAUDE.md` has the
+file-by-file breakdown.

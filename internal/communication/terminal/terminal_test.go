@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/skryvets/my-agent/internal/agent"
+	"github.com/skryvets/my-agent/internal/task"
 )
 
 type fakeAgent struct {
@@ -17,9 +18,25 @@ type fakeAgent struct {
 
 func (f fakeAgent) Model() string { return "test-model" }
 
-func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (string, error) {
-	return f.answer(history)
+func (f fakeAgent) Chat(_ context.Context, history agent.History, stream io.Writer) (string, error) {
+	answer, err := f.answer(history)
+	io.WriteString(stream, answer)
+	return answer, err
 }
+
+// fakeTasks records the run the terminal asked for.
+type fakeTasks struct {
+	chat, repository, instruction string
+	lost                          []task.Run
+}
+
+func (f *fakeTasks) Start(ctx context.Context, chat, repository, instruction string, report task.Report) error {
+	f.chat, f.repository, f.instruction = chat, repository, instruction
+	report("Cloning " + repository)
+	return nil
+}
+
+func (f *fakeTasks) Interrupted(ctx context.Context) []task.Run { return f.lost }
 
 func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 	var seen []agent.History
@@ -28,10 +45,9 @@ func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 		return "answer", nil
 	}}
 
-	var out, errOut strings.Builder
+	var out strings.Builder
 	in := strings.NewReader("first\n   \nsecond\n")
-	chat := &session{model: model, in: in, out: &out, errOut: &errOut}
-	if err := chat.run(context.Background()); err != nil {
+	if err := run(context.Background(), model, nil, in, &out); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -43,6 +59,9 @@ func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "test-model") {
 		t.Errorf("banner does not name the model: %q", out.String())
+	}
+	if strings.Count(out.String(), "answer") != 2 {
+		t.Errorf("the answer was not streamed once per turn: %q", out.String())
 	}
 }
 
@@ -56,17 +75,43 @@ func TestRunReportsFailedTurnAndDropsIt(t *testing.T) {
 		return "ok", nil
 	}}
 
-	var out, errOut strings.Builder
-	chat := &session{model: model, in: strings.NewReader("boom\nretry\n"), out: &out, errOut: &errOut}
-	if err := chat.run(context.Background()); err != nil {
+	var out strings.Builder
+	if err := run(context.Background(), model, nil, strings.NewReader("boom\nretry\n"), &out); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
-	if !strings.Contains(errOut.String(), "rate limited") {
-		t.Errorf("stderr = %q", errOut.String())
+	if !strings.Contains(out.String(), "rate limited") {
+		t.Errorf("out = %q", out.String())
 	}
 	if len(seen[1]) != 1 || seen[1][0].Content != "retry" {
 		t.Errorf("failed turn was kept: %#v", seen[1])
+	}
+}
+
+func TestRunOffersTheSameCommandsAsTelegram(t *testing.T) {
+	model := fakeAgent{answer: func(agent.History) (string, error) { return "answer", nil }}
+	tasks := &fakeTasks{lost: []task.Run{
+		{Chat: key, Repo: "skryvets/my-agent", Instruction: "fix it", Branch: "my-agent/1", State: task.Interrupted},
+		{Chat: "99", Repo: "a/b"},
+	}}
+
+	var out strings.Builder
+	in := strings.NewReader("/help\n/task skryvets/my-agent fix the lint warning\n/reset\n")
+	if err := run(context.Background(), model, tasks, in, &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	printed := out.String()
+	for _, want := range []string{"/task owner/name", "Cloning skryvets/my-agent", "Conversation cleared.", "A restart stopped the task on skryvets/my-agent"} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("the terminal never printed %q: %s", want, printed)
+		}
+	}
+	if strings.Contains(printed, "a/b") {
+		t.Errorf("the terminal reported the run of another chat: %s", printed)
+	}
+	if tasks.chat != key || tasks.instruction != "fix the lint warning" {
+		t.Errorf("run = %#v", tasks)
 	}
 }
 
@@ -87,10 +132,8 @@ func TestRunReadsTheRealStandardStreams(t *testing.T) {
 	io.WriteString(questions, "hello\n")
 	questions.Close()
 
-	model := fakeAgent{answer: func(agent.History) (string, error) {
-		return "answer", nil
-	}}
-	if err := Run(context.Background(), model); err != nil {
+	model := fakeAgent{answer: func(agent.History) (string, error) { return "answer", nil }}
+	if err := Run(context.Background(), model, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
