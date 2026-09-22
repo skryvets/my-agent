@@ -1,20 +1,12 @@
 package task
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
-)
 
-const (
-	githubAPI = "https://api.github.com"
-
-	// apiVersion is the REST version this code was written against.
-	apiVersion = "2022-11-28"
+	"github.com/google/go-github/v89/github"
 )
 
 // Repo names one repository on GitHub.
@@ -49,88 +41,51 @@ type GitHub struct {
 
 // DefaultBranch is the branch a pull request is opened against.
 func (g GitHub) DefaultBranch(ctx context.Context, repo Repo) (string, error) {
-	var answer struct {
-		DefaultBranch string `json:"default_branch"`
-	}
-	if err := g.call(ctx, http.MethodGet, "/repos/"+repo.String(), nil, &answer); err != nil {
+	client, err := g.client()
+	if err != nil {
 		return "", err
 	}
-	if answer.DefaultBranch == "" {
+	remote, _, err := client.Repositories.Get(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		return "", err
+	}
+	if remote.GetDefaultBranch() == "" {
 		return "", fmt.Errorf("%s names no default branch", repo)
 	}
-	return answer.DefaultBranch, nil
+	return remote.GetDefaultBranch(), nil
 }
 
 // OpenPullRequest opens one pull request and returns its web address.
 func (g GitHub) OpenPullRequest(ctx context.Context, repo Repo, title, head, base, body string) (string, error) {
-	request := map[string]any{"title": title, "head": head, "base": base, "body": body}
-
-	var answer struct {
-		URL string `json:"html_url"`
-	}
-	if err := g.call(ctx, http.MethodPost, "/repos/"+repo.String()+"/pulls", request, &answer); err != nil {
+	client, err := g.client()
+	if err != nil {
 		return "", err
 	}
-	return answer.URL, nil
+	pull, _, err := client.PullRequests.Create(ctx, repo.Owner, repo.Name, &github.NewPullRequest{
+		Title: github.Ptr(title),
+		Head:  github.Ptr(head),
+		Base:  github.Ptr(base),
+		Body:  github.Ptr(body),
+	})
+	if err != nil {
+		return "", err
+	}
+	return pull.GetHTMLURL(), nil
 }
 
-func (g GitHub) call(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
-	if in != nil {
-		encoded, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(encoded)
+// client builds a go-github client. BaseURL is the API root, so WithURLs is
+// used rather than WithEnterpriseURLs, which would append /api/v3/.
+func (g GitHub) client() (*github.Client, error) {
+	var opts []github.ClientOptionsFunc
+	if g.HTTP != nil {
+		opts = append(opts, github.WithHTTPClient(g.HTTP))
 	}
-
-	root := g.BaseURL
-	if root == "" {
-		root = githubAPI
-	}
-	req, err := http.NewRequestWithContext(ctx, method, root+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", apiVersion)
 	if g.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+g.Token)
+		opts = append(opts, github.WithAuthToken(g.Token))
 	}
-
-	client := g.HTTP
-	if client == nil {
-		client = http.DefaultClient
+	if g.BaseURL != "" {
+		base := g.BaseURL
+		opts = append(opts, github.WithURLs(&base, nil))
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return githubError(method, path, resp)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
-}
-
-func githubError(method, path string, resp *http.Response) error {
-	var answer struct {
-		Message string `json:"message"`
-		Errors  []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err := json.Unmarshal(data, &answer); err != nil || answer.Message == "" {
-		return fmt.Errorf("github %s %s: %s", method, path, resp.Status)
-	}
-
-	message := answer.Message
-	for _, detail := range answer.Errors {
-		if detail.Message != "" {
-			message += ": " + detail.Message
-		}
-	}
-	return fmt.Errorf("github %s %s: %s: %s", method, path, resp.Status, message)
+	return github.NewClient(opts...)
 }

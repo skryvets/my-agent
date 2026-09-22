@@ -88,10 +88,10 @@ func TestGitHubOpensAPullRequest(t *testing.T) {
 	if headers.Get("Authorization") != "Bearer gh-token" {
 		t.Errorf("Authorization = %q", headers.Get("Authorization"))
 	}
-	if headers.Get("Accept") != "application/vnd.github+json" {
+	if headers.Get("Accept") != "application/vnd.github.v3+json" {
 		t.Errorf("Accept = %q", headers.Get("Accept"))
 	}
-	if headers.Get("X-GitHub-Api-Version") != apiVersion {
+	if headers.Get("X-GitHub-Api-Version") != "2022-11-28" {
 		t.Errorf("X-GitHub-Api-Version = %q", headers.Get("X-GitHub-Api-Version"))
 	}
 }
@@ -131,6 +131,34 @@ func TestGitHubReportsWhatItWasTold(t *testing.T) {
 	}
 }
 
+func TestGitHubUsesThePublicAPIWhenTheRootIsEmpty(t *testing.T) {
+	var got *http.Request
+	github := GitHub{
+		Token: "gh-token",
+		HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+			got = r
+			return nil, context.Canceled
+		})},
+	}
+	_, err := github.DefaultBranch(context.Background(), Repo{Owner: "a", Name: "b"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if got == nil {
+		t.Fatal("no request")
+	}
+	if got.URL.String() != "https://api.github.com/repos/a/b" {
+		t.Errorf("url = %q", got.URL)
+	}
+	if got.Header.Get("Authorization") != "Bearer gh-token" {
+		t.Errorf("Authorization = %q", got.Header.Get("Authorization"))
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (fn roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return fn(r) }
+
 func TestGitHubReportsAServerThatIsNotThere(t *testing.T) {
 	github := GitHub{BaseURL: "http://127.0.0.1:1"}
 	if _, err := github.DefaultBranch(context.Background(), Repo{Owner: "a", Name: "b"}); err == nil {
@@ -138,6 +166,9 @@ func TestGitHubReportsAServerThatIsNotThere(t *testing.T) {
 	}
 	github.BaseURL = "http://%zz"
 	if _, err := github.DefaultBranch(context.Background(), Repo{Owner: "a", Name: "b"}); err == nil {
+		t.Fatal("expected an error for an address that cannot be read")
+	}
+	if _, err := github.OpenPullRequest(context.Background(), Repo{Owner: "a", Name: "b"}, "t", "h", "b", ""); err == nil {
 		t.Fatal("expected an error for an address that cannot be read")
 	}
 }
