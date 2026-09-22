@@ -5,9 +5,10 @@ agentic work runs on [eino](https://github.com/cloudwego/eino): eino streams
 the reply, reassembles the tool calls, runs them, retries a failed call and
 asks the model again. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot), which polls and speaks
-the Bot API. `go.mod` requires eino, the eino OpenAI model and go-telegram/bot,
-and nothing else. Everything below `internal/sandbox`, `internal/devcontainer`
-and `internal/task` stays on the standard library.
+the Bot API. `go.mod` requires eino, the eino OpenAI model, go-telegram/bot and
+tailscale/hujson, and nothing else. Everything below `internal/sandbox`,
+`internal/devcontainer` and `internal/task` stays on the standard library,
+except the JSONC reader of `internal/devcontainer`, which is hujson.
 
 ## Layout
 
@@ -24,7 +25,6 @@ internal/tools/                      what the agent can do in a dev container
   file.go                            read a file, write a file
 internal/devcontainer/               the environment a repository describes
   devcontainer.go                    Config, Load, where the file is
-  jsonc.go                           JSON with comments into JSON
   lifecycle.go                       the setup commands in their three forms
   environment.go                     the workspace, the environment, variables
 internal/conversation/               which conversation a call belongs to
