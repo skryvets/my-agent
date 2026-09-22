@@ -19,6 +19,7 @@ import (
 
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/devcontainer"
+	"github.com/skryvets/my-agent/internal/tools"
 )
 
 // started counts the runs of this process, so two runs of one second still
@@ -30,12 +31,17 @@ type Agent interface {
 	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
 }
 
-// Sandbox starts the dev container of a checkout on the host and runs the
-// commands that set it up. *sandbox.Pool satisfies it.
-type Sandbox interface {
-	Bind(ctx context.Context, key string, config devcontainer.Config) error
+// Container is the dev container of one run: the workspace the tools work
+// in, and the commands that set it up. *sandbox.Container satisfies it.
+type Container interface {
+	tools.Workspace
 	Exec(ctx context.Context, args []string) (output string, code int, err error)
-	Close(ctx context.Context, key string) error
+	Remove(ctx context.Context) error
+}
+
+// Sandbox starts the dev container of a checkout on the host.
+type Sandbox interface {
+	Start(ctx context.Context, name string, config devcontainer.Config) (Container, error)
 }
 
 // A Report carries one line of progress back to the person who asked. A run
@@ -44,15 +50,16 @@ type Report func(text string)
 
 // Runner does the whole job.
 type Runner struct {
-	Agent   Agent
+	// Plain answers the questions that need no tool, such as naming the
+	// change.
+	Plain Agent
+	// Worker builds the agent that does the work, with its tools bound to the
+	// container of the run. Each run gets its own, so no tool can reach the
+	// container of another run.
+	Worker  func(ctx context.Context, workspace tools.Workspace) (Agent, error)
 	Sandbox Sandbox
 	GitHub  GitHub
 	Store   Store
-
-	// Plain answers the questions that need no tool, such as naming the
-	// change. A nil Plain uses Agent, which then carries the tool schemas
-	// into a question that cannot use them.
-	Plain Agent
 
 	// Token reaches GitHub over https for the clone and the push.
 	Token string

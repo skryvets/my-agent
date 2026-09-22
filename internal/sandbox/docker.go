@@ -1,11 +1,13 @@
 // Package sandbox starts the dev container of a repository and runs the
-// agent's tools inside it, one container for each conversation.
+// agent's tools inside it, one container for each task.
 package sandbox
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/moby/moby/api/types/jsonstream"
@@ -16,10 +18,50 @@ import (
 // everything back to 1.40, so an old daemon still answers.
 const apiVersion = "v1.43"
 
-// newDocker reaches the daemon at DOCKER_HOST, or at /var/run/docker.sock
-// when it is not set, as the docker command does.
-func newDocker() (*client.Client, error) {
-	return client.New(client.FromEnv, client.WithAPIVersion(apiVersion))
+// label marks every container the agent starts, so a container left behind by
+// a process that died can be found again.
+const label = "my-agent.task"
+
+// Docker is the daemon the dev containers run on. It reaches the daemon at
+// DOCKER_HOST, or at /var/run/docker.sock when it is not set, as the docker
+// command does.
+type Docker struct {
+	client *client.Client
+}
+
+// New reaches the daemon and removes what an earlier run of the agent left
+// behind.
+func New(ctx context.Context) (*Docker, error) {
+	docker, err := client.New(client.FromEnv, client.WithAPIVersion(apiVersion))
+	if err != nil {
+		return nil, err
+	}
+	d := &Docker{client: docker}
+	if err := d.Sweep(ctx); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// Sweep removes every container the agent started, from this run or an
+// earlier one. It runs at start, so a restart does not leave one container
+// for every task that was under way, and at exit.
+func (d *Docker) Sweep(ctx context.Context) error {
+	found, err := d.client.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", label),
+	})
+	if err != nil {
+		return err
+	}
+	for _, summary := range found.Items {
+		orphan := &Container{docker: d.client, id: summary.ID}
+		if err := orphan.Remove(ctx); err != nil {
+			return err
+		}
+		log.Printf("removed the container %s", shortID(summary.ID))
+	}
+	return nil
 }
 
 // progressTail is how much of a failed build is kept to say why it failed.
@@ -54,4 +96,13 @@ func readProgress(body io.Reader) (string, error) {
 			log = log[len(log)-progressTail:]
 		}
 	}
+}
+
+// shortID is how Docker names a container in a log line. A daemon returns a
+// long id, but nothing promises one.
+func shortID(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
 }

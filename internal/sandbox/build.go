@@ -18,7 +18,7 @@ import (
 // build makes the image of a dev container from its Dockerfile and returns the
 // id of the image. The context travels to the daemon as a tar, as it does for
 // docker build.
-func (p *Pool) build(ctx context.Context, config devcontainer.Config) (string, error) {
+func (d *Docker) build(ctx context.Context, config devcontainer.Config) (string, error) {
 	contextDir := config.BuildContext()
 	dockerfile, err := filepath.Rel(contextDir, config.Dockerfile())
 	if err != nil || !filepath.IsLocal(dockerfile) {
@@ -30,7 +30,7 @@ func (p *Pool) build(ctx context.Context, config devcontainer.Config) (string, e
 	go func() { writer.CloseWithError(pack(contextDir, writer)) }()
 
 	log.Printf("building the image of %s", filepath.Base(config.Root))
-	built, err := p.docker.ImageBuild(ctx, archive, client.ImageBuildOptions{
+	built, err := d.client.ImageBuild(ctx, archive, client.ImageBuildOptions{
 		Dockerfile: filepath.ToSlash(dockerfile),
 		BuildArgs:  config.BuildArgs(),
 		Target:     config.Build.Target,

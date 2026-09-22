@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"archive/tar"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -10,9 +11,10 @@ import (
 func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 	fake := newFakeDocker(t)
 	fake.output = "README.md\ngo.mod\n"
-	pool, ctx := bound(t, fake, "task-1")
+	box := started(t, fake)
+	ctx := context.Background()
 
-	got, err := pool.Run(ctx, "ls")
+	got, err := box.Run(ctx, "ls")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -32,7 +34,7 @@ func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 	}
 
 	fake.exitCode = 2
-	got, err = pool.Run(ctx, "false")
+	got, err = box.Run(ctx, "false")
 	if err != nil {
 		t.Fatalf("a non-zero exit must not be an error: %v", err)
 	}
@@ -40,7 +42,7 @@ func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 		t.Errorf("output = %q", got)
 	}
 
-	output, code, err := pool.Exec(ctx, []string{"false"})
+	output, code, err := box.Exec(ctx, []string{"false"})
 	if err != nil || code != 2 || strings.Contains(output, "exit status") {
 		t.Errorf("Exec = %q, %d, %v, want the code apart from the output", output, code, err)
 	}
@@ -50,9 +52,10 @@ func TestContainerRunReportsAnExecThatFails(t *testing.T) {
 	for _, failing := range []string{"/containers/container-1/exec", "/exec/exec-1/start", "/exec/exec-1/json"} {
 		t.Run(failing, func(t *testing.T) {
 			fake := newFakeDocker(t)
-			pool, ctx := bound(t, fake, "task-1")
+			box := started(t, fake)
+			ctx := context.Background()
 			fake.fail = failing
-			if _, err := pool.Run(ctx, "ls"); err == nil {
+			if _, err := box.Run(ctx, "ls"); err == nil {
 				t.Error("expected an error")
 			}
 		})
@@ -63,9 +66,10 @@ func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 	fake := newFakeDocker(t)
 	fake.files["/workspaces/checkout/go.mod"] = "module example\n"
 	fake.files["/etc/hosts"] = "127.0.0.1 localhost\n"
-	pool, ctx := bound(t, fake, "task-1")
+	box := started(t, fake)
+	ctx := context.Background()
 
-	got, err := pool.ReadFile(ctx, "go.mod")
+	got, err := box.ReadFile(ctx, "go.mod")
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -75,7 +79,7 @@ func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 
 	// An absolute path reaches the whole container, which is the point of
 	// having one: there is nothing inside worth guarding.
-	got, err = pool.ReadFile(ctx, "/etc/hosts")
+	got, err = box.ReadFile(ctx, "/etc/hosts")
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -83,7 +87,7 @@ func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 		t.Errorf("content = %q", got)
 	}
 
-	if _, err := pool.ReadFile(ctx, "absent.txt"); err == nil {
+	if _, err := box.ReadFile(ctx, "absent.txt"); err == nil {
 		t.Error("expected an error for a file that is not there")
 	}
 }
@@ -91,20 +95,22 @@ func TestContainerReadFileUnpacksTheArchive(t *testing.T) {
 func TestContainerReadFileReportsAnEmptyArchive(t *testing.T) {
 	fake := newFakeDocker(t)
 	fake.files["/workspaces/checkout/empty"] = ""
-	pool, ctx := bound(t, fake, "task-1")
+	box := started(t, fake)
+	ctx := context.Background()
 
 	// A directory answers with an archive that holds no regular file.
 	fake.onlyDirectories = true
-	if _, err := pool.ReadFile(ctx, "empty"); err == nil {
+	if _, err := box.ReadFile(ctx, "empty"); err == nil {
 		t.Error("expected an error for an archive with no file in it")
 	}
 }
 
 func TestContainerWriteFileSendsATarAndMakesTheDirectory(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool, ctx := bound(t, fake, "task-1")
+	box := started(t, fake)
+	ctx := context.Background()
 
-	if err := pool.WriteFile(ctx, "pkg/hello.go", "package pkg\n"); err != nil {
+	if err := box.WriteFile(ctx, "pkg/hello.go", "package pkg\n"); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -132,10 +138,11 @@ func TestContainerWriteFileSendsATarAndMakesTheDirectory(t *testing.T) {
 
 func TestContainerWriteFileReportsAFailedDirectory(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool, ctx := bound(t, fake, "task-1")
+	box := started(t, fake)
+	ctx := context.Background()
 
 	fake.fail = "/containers/container-1/exec"
-	if err := pool.WriteFile(ctx, "pkg/hello.go", "x"); err == nil {
+	if err := box.WriteFile(ctx, "pkg/hello.go", "x"); err == nil {
 		t.Error("expected an error when the directory could not be made")
 	}
 }

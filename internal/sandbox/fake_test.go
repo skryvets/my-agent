@@ -16,7 +16,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/skryvets/my-agent/internal/conversation"
 	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
@@ -266,18 +265,15 @@ func (f *fakeDocker) query(request string) string {
 	return f.queries[request]
 }
 
-func newTestPool(t *testing.T, fake *fakeDocker, options Options) *Pool {
+func newTestDocker(t *testing.T, fake *fakeDocker) *Docker {
 	t.Helper()
 	t.Setenv("DOCKER_HOST", "unix://"+fake.socket)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	pool, err := New(ctx, options)
+	docker, err := New(context.Background())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	return pool
+	return docker
 }
 
 // imageConfig is a dev container that names an image, on a checkout called
@@ -286,12 +282,12 @@ func imageConfig() devcontainer.Config {
 	return devcontainer.Config{Image: testImage, Root: "/host/checkout"}
 }
 
-// bound is a pool with one container for key, and the context that reaches it.
-func bound(t *testing.T, fake *fakeDocker, key string) (*Pool, context.Context) {
+// started is the container of one task on the fake daemon.
+func started(t *testing.T, fake *fakeDocker) *Container {
 	t.Helper()
-	pool := newTestPool(t, fake, Options{})
-	if err := pool.Bind(context.Background(), key, imageConfig()); err != nil {
-		t.Fatalf("Bind: %v", err)
+	container, err := newTestDocker(t, fake).Start(context.Background(), "task-1", imageConfig())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-	return pool, conversation.WithKey(context.Background(), key)
+	return container
 }

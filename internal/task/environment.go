@@ -8,17 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skryvets/my-agent/internal/conversation"
 	"github.com/skryvets/my-agent/internal/devcontainer"
 )
 
 // setupTail keeps enough of a failed setup command to say why it failed.
 const setupTail = 1500
 
-// prepare starts the dev container of the repository on the checkout and runs
-// the commands that finish its setup. The caller releases the container, which
-// is safe even when prepare failed half way.
-func (r *Runner) prepare(ctx context.Context, key, dir string, report Report) (devcontainer.Config, error) {
+// environment reads what the repository says about its dev container, and
+// opens the checkout to the user that container runs as.
+func environment(dir string, report Report) (devcontainer.Config, error) {
 	config, err := devcontainer.Load(dir)
 	if err != nil {
 		return devcontainer.Config{}, err
@@ -29,32 +27,32 @@ func (r *Runner) prepare(ctx context.Context, key, dir string, report Report) (d
 	if err := shareCheckout(dir); err != nil {
 		return devcontainer.Config{}, err
 	}
+	return config, nil
+}
 
-	report("Starting the dev container")
-	if err := r.Sandbox.Bind(ctx, key, config); err != nil {
-		return devcontainer.Config{}, err
-	}
-	inside := conversation.WithKey(ctx, key)
+// setUp runs the commands that finish the setup of a new container, in the
+// order the specification gives.
+func setUp(ctx context.Context, box Container, config devcontainer.Config, report Report) error {
 	for _, step := range config.Lifecycle() {
 		report("Running " + step.Name)
-		output, code, err := r.Sandbox.Exec(inside, step.Args)
+		output, code, err := box.Exec(ctx, step.Args)
 		if err != nil {
-			return devcontainer.Config{}, err
+			return err
 		}
 		if code != 0 {
-			return devcontainer.Config{}, fmt.Errorf("%s exited with %d: %s", step.Name, code, tail(output))
+			return fmt.Errorf("%s exited with %d: %s", step.Name, code, tail(output))
 		}
 	}
-	return config, nil
+	return nil
 }
 
 // release throws the container away. What the user of the image wrote into
 // the checkout may belong to that user, so the container first makes it
 // writable for everyone, or the host could not delete the checkout.
-func (r *Runner) release(ctx context.Context, key string) {
+func release(ctx context.Context, box Container) {
 	ctx = context.WithoutCancel(ctx)
-	r.Sandbox.Exec(conversation.WithKey(ctx, key), []string{"chmod", "-R", "a+rwX", "."})
-	r.Sandbox.Close(ctx, key)
+	box.Exec(ctx, []string{"chmod", "-R", "a+rwX", "."})
+	box.Remove(ctx)
 }
 
 // shareCheckout makes the clone writable for every user, because the user a

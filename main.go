@@ -11,6 +11,7 @@ import (
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/communication/telegram"
 	"github.com/skryvets/my-agent/internal/communication/terminal"
+	"github.com/skryvets/my-agent/internal/devcontainer"
 	"github.com/skryvets/my-agent/internal/sandbox"
 	"github.com/skryvets/my-agent/internal/session"
 	"github.com/skryvets/my-agent/internal/task"
@@ -32,29 +33,23 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// chat answers in words, with no tools. It serves the conversations, and
+	// it names the change of a task.
 	chat := must(agent.New(ctx, apiKey))
 
 	var tasks session.Tasks
 	if token := os.Getenv("GITHUB_TOKEN"); token == "" {
 		log.Print("/task is off: GITHUB_TOKEN is not set")
 	} else {
-		pool, err := sandbox.New(ctx, sandbox.Options{})
-		if err != nil {
-			log.Fatal(err)
-		}
-		// The reaper also clears up when ctx ends, but main can return
-		// first, so the containers are removed here where it is certain.
-		defer pool.Shutdown(context.WithoutCancel(ctx))
+		docker := must(sandbox.New(ctx))
+		// A run removes its own container, but a run that ctx stopped may
+		// not get to it, so the containers are swept here where it is certain.
+		defer docker.Sweep(context.WithoutCancel(ctx))
 
-		worker := must(agent.New(ctx, apiKey,
-			must(tools.Shell(pool)),
-			must(tools.ReadFile(pool)),
-			must(tools.WriteFile(pool)),
-		))
 		tasks = &task.Runner{
-			Agent:   worker,
 			Plain:   chat,
-			Sandbox: pool,
+			Worker:  worker(apiKey),
+			Sandbox: containers{docker},
 			GitHub:  task.GitHub{Token: token},
 			Store:   task.Store{Dir: *taskStateDir},
 			Token:   token,
@@ -68,6 +63,27 @@ func main() {
 	if err := serve(ctx, chat, tasks); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// worker builds the agent of one run, with every tool bound to the container
+// of that run.
+func worker(apiKey string) func(context.Context, tools.Workspace) (task.Agent, error) {
+	return func(ctx context.Context, workspace tools.Workspace) (task.Agent, error) {
+		kit, err := tools.All(workspace)
+		if err != nil {
+			return nil, err
+		}
+		return agent.New(ctx, apiKey, kit...)
+	}
+}
+
+// containers lets *sandbox.Docker stand in as a task.Sandbox. Its Start
+// returns a *sandbox.Container, and Go does not read that as the
+// task.Container the interface asks for, so this one line does.
+type containers struct{ *sandbox.Docker }
+
+func (c containers) Start(ctx context.Context, name string, config devcontainer.Config) (task.Container, error) {
+	return c.Docker.Start(ctx, name, config)
 }
 
 // must unwraps a value and an error. Every caller is start-up wiring, where

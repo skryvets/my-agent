@@ -10,8 +10,9 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// Container is one conversation's workspace. Commands run inside it, and the
-// files the agent reads and writes are its files.
+// Container is the dev container of one task. Commands run inside it, and
+// the files the agent reads and writes are its files. It is the Workspace the
+// tools work in.
 type Container struct {
 	docker *client.Client
 	id     string
@@ -70,8 +71,9 @@ func (c *Container) Exec(ctx context.Context, args []string) (string, int, error
 	return string(output), status.ExitCode, nil
 }
 
-// remove throws the container away with everything written inside it.
-func (c *Container) remove(ctx context.Context) error {
+// Remove throws the container away with everything written inside it that is
+// not in the workspace.
+func (c *Container) Remove(ctx context.Context) error {
 	_, err := c.docker.ContainerRemove(ctx, c.id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	return err
 }

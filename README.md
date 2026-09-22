@@ -39,6 +39,10 @@ flowchart LR
         term["terminal<br/>stdin, stdout"]
     end
 
+    subgraph conv ["internal/session"]
+        ses["Session<br/>history, commands"]
+    end
+
     subgraph core ["internal/agent"]
         chat["chat.go<br/>Client.Chat"]
         eino["agent.go<br/>eino Runner<br/>failure.go<br/>tools, retries"]
@@ -57,7 +61,7 @@ flowchart LR
     end
 
     subgraph box ["internal/sandbox"]
-        pool["Pool<br/>one container per task"]
+        pool["Docker, Container<br/>one container per task"]
     end
 
     api(["OpenRouter<br/>chat completions"])
@@ -65,9 +69,10 @@ flowchart LR
 
     main -->|default| tg
     main -->|"-cli"| term
-    main -->|eino tools| eino
-    tg -->|Agent interface| chat
-    term -->|Agent interface| chat
+    tg -->|one per chat| ses
+    term -->|one| ses
+    ses -->|Agent interface| chat
+    ses -->|"/task"| runner
     chat -->|history| eino
     eino -->|"POST, stream: true"| api
     api -->|server-sent events| eino
@@ -75,10 +80,10 @@ flowchart LR
     eino -->|tool calls| sh
     sh -->|Workspace| pool
     sh -->|results| eino
-    tg -->|"/task, /stop"| runner
     runner -->|reads| dc
-    runner -->|bind the checkout| pool
-    runner --> chat
+    runner -->|Start on the checkout| pool
+    runner -->|Worker: tools on the container| eino
+    runner -->|names the change| chat
     pool -->|"build, pull, exec"| dock
     runner --> gh(["GitHub<br/>git, go-github"])
 ```
@@ -201,9 +206,12 @@ The container of a task:
 | --- | --- |
 | the task sets up | the container starts with the checkout mounted and the default Docker network |
 | the task ends, fails or is stopped | the container is removed |
-| 30 minutes without a command | a reaper removes it |
 | the agent stops | every container it started is removed |
 | the agent starts | the containers of an earlier run are removed |
+
+Every run gets its own container, its own tools bound to that container, and
+its own agent over those tools. Nothing is shared between two runs, so
+nothing has to say which run a call belongs to.
 
 `internal/sandbox` speaks the Docker Engine API over the unix socket through
 `moby/moby/client`, with the API version pinned. The calls it makes: pull or
@@ -397,7 +405,6 @@ main.go                              flag parsing and wiring
 internal/agent/                      the model: the eino agent over OpenRouter, and the history
 internal/tools/                      what the agent can do in a dev container: shell, files
 internal/devcontainer/               the environment a repository describes for itself
-internal/conversation/               which conversation a call belongs to
 internal/session/                    one conversation and its commands, the same in every connector
 internal/task/                       a job end to end: clone, set up, work, push, open a pull request
 internal/sandbox/                    a Docker container for each task

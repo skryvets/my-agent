@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/skryvets/my-agent/internal/devcontainer"
+	"github.com/skryvets/my-agent/internal/tools"
 )
 
 // newRunner builds a runner whose repository, GitHub and container are all
@@ -46,8 +47,15 @@ func newRunnerWithNamer(t *testing.T, model *fakeAgent, box *fakeSandbox) (*Runn
 	model.box = box
 	namer := &fakeAgent{answer: "Remove the unused import"}
 	return &Runner{
-		Agent:    model,
-		Plain:    namer,
+		Plain: namer,
+		// The worker is built on the container of the run, which the test
+		// checks by handing back the model only for that container.
+		Worker: func(ctx context.Context, workspace tools.Workspace) (Agent, error) {
+			if _, ok := workspace.(*fakeContainer); !ok {
+				t.Errorf("the worker was built on %T, want the container of the run", workspace)
+			}
+			return model, nil
+		},
 		Sandbox:  box,
 		GitHub:   GitHub{BaseURL: server.URL, HTTP: server.Client()},
 		Store:    Store{Dir: filepath.Join(t.TempDir(), "state")},
@@ -110,7 +118,7 @@ func TestStartOpensAPullRequest(t *testing.T) {
 		answer: "I removed the unused import.",
 		write:  writeInto(t, "main.go", "package main\n"),
 	}
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	runner, opened, namer := newRunnerWithNamer(t, model, box)
 	progress := &reporter{}
 
@@ -142,44 +150,59 @@ func TestStartOpensAPullRequest(t *testing.T) {
 	}
 
 	// The model worked in the container of this run, on the checkout.
-	keys, told := model.seen()
-	if len(keys) != 1 || !strings.HasPrefix(keys[0], "task-") {
-		t.Errorf("the model worked as %#v", keys)
-	}
-	if !strings.Contains(told[0], "fix the lint warning") || !strings.Contains(told[0], "Do not run git") {
-		t.Errorf("the model was told %q", told[0])
+	told := model.seen()
+	if len(told) != 1 || !strings.Contains(told[0], "fix the lint warning") || !strings.Contains(told[0], "Do not run git") {
+		t.Errorf("the model was told %q", told)
 	}
 	if !strings.Contains(told[0], "/workspaces/my-agent") {
 		t.Errorf("the model was not told where the workspace is: %q", told[0])
 	}
 
-	// The dev container was set up before the work, and gave the checkout
-	// back to the host after it.
-	ran := box.commands()
-	if len(ran) != 2 || strings.Join(ran[0], " ") != keys[0]+" sh -c go version" {
+	// One container was started for the run, set up before the work, and
+	// gave the checkout back to the host after it.
+	containers := box.containers()
+	if len(containers) != 1 {
+		t.Fatalf("containers = %#v", containers)
+	}
+	ran := containers[0].commands()
+	if len(ran) != 2 || strings.Join(ran[0], " ") != "sh -c go version" {
 		t.Errorf("commands = %#v", ran)
 	}
-	if last := ran[len(ran)-1]; last[1] != "chmod" {
+	if last := ran[len(ran)-1]; last[0] != "chmod" {
 		t.Errorf("the checkout was not given back: %#v", ran)
+	}
+	if !containers[0].gone() {
+		t.Error("the container of the run was not thrown away")
 	}
 
 	// Naming the change is a question of its own, with no tools behind it.
-	_, named := namer.seen()
-	if len(named) != 1 || !strings.Contains(named[0], "commit subject") {
+	if named := namer.seen(); len(named) != 1 || !strings.Contains(named[0], "commit subject") {
 		t.Errorf("the change was named by %#v", named)
 	}
-	bound, closed := box.seen()
-	if len(bound) != 1 {
-		t.Errorf("containers = %#v", bound)
+}
+
+func TestStartFailsWhenTheWorkerCannotBeBuilt(t *testing.T) {
+	box := &fakeSandbox{}
+	runner, opened := newRunner(t, &fakeAgent{answer: "done"}, box)
+	runner.Worker = func(context.Context, tools.Workspace) (Agent, error) {
+		return nil, errors.New("no tools today")
 	}
-	if len(closed) != 1 || closed[0] != keys[0] {
-		t.Errorf("the container of the run was not thrown away: %#v", closed)
+
+	err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "no tools today") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(*opened) != 0 {
+		t.Errorf("a pull request was opened: %#v", *opened)
+	}
+	if containers := box.containers(); len(containers) != 1 || !containers[0].gone() {
+		t.Errorf("the container was kept: %#v", containers)
 	}
 }
 
 func TestStartStopsWhenNothingChanged(t *testing.T) {
 	model := &fakeAgent{answer: "There was nothing to fix."}
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	runner, opened := newRunner(t, model, box)
 	progress := &reporter{}
 
@@ -201,7 +224,7 @@ func TestStartStopsWhenNothingChanged(t *testing.T) {
 }
 
 func TestStartRefusesWhatItCannotDo(t *testing.T) {
-	runner, _ := newRunner(t, &fakeAgent{}, newFakeSandbox())
+	runner, _ := newRunner(t, &fakeAgent{}, &fakeSandbox{})
 	ctx := context.Background()
 
 	if err := runner.Start(ctx, "99", "not-a-repo", "do something", func(string) {}); err == nil {
@@ -214,7 +237,7 @@ func TestStartRefusesWhatItCannotDo(t *testing.T) {
 
 func TestStartWritesDownWhyItFailed(t *testing.T) {
 	model := &fakeAgent{err: errors.New("the model is down")}
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	runner, _ := newRunner(t, model, box)
 
 	err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {})
@@ -229,13 +252,13 @@ func TestStartWritesDownWhyItFailed(t *testing.T) {
 	if !strings.Contains(runs[0].Detail, "the model is down") {
 		t.Errorf("detail = %q", runs[0].Detail)
 	}
-	if _, closed := box.seen(); len(closed) != 1 {
-		t.Errorf("the container of a failed run was kept: %#v", closed)
+	if containers := box.containers(); len(containers) != 1 || !containers[0].gone() {
+		t.Errorf("the container of a failed run was kept: %#v", containers)
 	}
 }
 
 func TestStartReportsAContainerThatWillNotStart(t *testing.T) {
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	box.err = errors.New("the daemon is gone")
 	runner, _ := newRunner(t, &fakeAgent{}, box)
 
@@ -246,7 +269,7 @@ func TestStartReportsAContainerThatWillNotStart(t *testing.T) {
 
 func TestStartLeavesNoCheckoutBehind(t *testing.T) {
 	model := &fakeAgent{answer: "done", write: writeInto(t, "main.go", "package main\n")}
-	runner, _ := newRunner(t, model, newFakeSandbox())
+	runner, _ := newRunner(t, model, &fakeSandbox{})
 
 	if err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -262,7 +285,7 @@ func TestStartLeavesNoCheckoutBehind(t *testing.T) {
 }
 
 func TestInterruptedMarksWhatARestartCaught(t *testing.T) {
-	runner, _ := newRunner(t, &fakeAgent{}, newFakeSandbox())
+	runner, _ := newRunner(t, &fakeAgent{}, &fakeSandbox{})
 
 	// One run was under way when the process died, one had finished.
 	runner.save(Run{ID: "20260101-000001-1", Chat: "99", Repo: "a/b", State: Working, Branch: "my-agent/1"})
@@ -293,7 +316,7 @@ func loadRuns(t *testing.T, runner *Runner) []Run {
 
 func TestStartFallsBackWhenTheModelWillNotNameTheChange(t *testing.T) {
 	model := &fakeAgent{answer: "I fixed it.", write: writeInto(t, "main.go", "package main\n")}
-	runner, opened, namer := newRunnerWithNamer(t, model, newFakeSandbox())
+	runner, opened, namer := newRunnerWithNamer(t, model, &fakeSandbox{})
 	namer.answer = "Here is the subject:\n\nFix it"
 
 	if err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix the lint warning", func(string) {}); err != nil {
@@ -309,7 +332,7 @@ func TestStartFallsBackWhenTheModelWillNotNameTheChange(t *testing.T) {
 
 func TestStartNeedsADevContainer(t *testing.T) {
 	model := &fakeAgent{answer: "done"}
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	runner, _ := newRunner(t, model, box)
 	rewriteOrigin(t, runner, map[string]string{".devcontainer.json": ""})
 
@@ -317,10 +340,10 @@ func TestStartNeedsADevContainer(t *testing.T) {
 	if !errors.Is(err, devcontainer.ErrMissing) {
 		t.Fatalf("err = %v, want ErrMissing", err)
 	}
-	if bound, _ := box.seen(); len(bound) != 0 {
-		t.Errorf("a container started with no dev container: %#v", bound)
+	if containers := box.containers(); len(containers) != 0 {
+		t.Errorf("a container started with no dev container: %#v", containers)
 	}
-	if _, told := model.seen(); len(told) != 0 {
+	if told := model.seen(); len(told) != 0 {
 		t.Errorf("the model worked with no environment: %#v", told)
 	}
 }
@@ -333,23 +356,23 @@ func TestStartStopsWhenTheSetupFails(t *testing.T) {
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {
 			model := &fakeAgent{answer: "done"}
-			box := newFakeSandbox()
+			box := &fakeSandbox{}
 			breakIt(box)
 			runner, _ := newRunner(t, model, box)
 
 			if err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {}); err == nil {
 				t.Fatal("expected an error")
 			}
-			if _, told := model.seen(); len(told) != 0 {
+			if told := model.seen(); len(told) != 0 {
 				t.Errorf("the model worked in a container that is not set up: %#v", told)
 			}
-			if _, closed := box.seen(); len(closed) != 1 {
-				t.Errorf("the container of a failed setup was kept: %#v", closed)
+			if containers := box.containers(); len(containers) != 1 || !containers[0].gone() {
+				t.Errorf("the container of a failed setup was kept: %#v", containers)
 			}
 		})
 	}
 
-	box := newFakeSandbox()
+	box := &fakeSandbox{}
 	box.exit = map[string]int{"sh": 2}
 	runner, _ := newRunner(t, &fakeAgent{}, box)
 	err := runner.Start(context.Background(), "99", "skryvets/my-agent", "fix it", func(string) {})
@@ -359,7 +382,7 @@ func TestStartStopsWhenTheSetupFails(t *testing.T) {
 }
 
 func TestStartTellsTheChatWhatItSkips(t *testing.T) {
-	runner, _ := newRunner(t, &fakeAgent{answer: "done"}, newFakeSandbox())
+	runner, _ := newRunner(t, &fakeAgent{answer: "done"}, &fakeSandbox{})
 	rewriteOrigin(t, runner, map[string]string{
 		".devcontainer.json": `{"image": "golang:1.26", "features": {"ghcr.io/devcontainers/features/node:1": {}}}`,
 	})
@@ -376,7 +399,7 @@ func TestStartTellsTheChatWhatItSkips(t *testing.T) {
 func TestStartRecordsARunStoppedFromTheChat(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	model := &fakeAgent{write: func(string) { stop() }, err: context.Canceled}
-	runner, _ := newRunner(t, model, newFakeSandbox())
+	runner, _ := newRunner(t, model, &fakeSandbox{})
 
 	if err := runner.Start(ctx, "99", "skryvets/my-agent", "fix it", func(string) {}); err == nil {
 		t.Fatal("expected an error")

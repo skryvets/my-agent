@@ -46,12 +46,12 @@ func buildConfig(t *testing.T) devcontainer.Config {
 	}
 }
 
-func TestBindBuildsTheDockerfile(t *testing.T) {
+func TestStartBuildsTheDockerfile(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
+	docker := newTestDocker(t, fake)
 
-	if err := pool.Bind(context.Background(), "task-1", buildConfig(t)); err != nil {
-		t.Fatalf("Bind: %v", err)
+	if _, err := docker.Start(context.Background(), "task-1", buildConfig(t)); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 
 	query, err := url.ParseQuery(fake.query("POST /build"))
@@ -92,11 +92,11 @@ func TestBindBuildsTheDockerfile(t *testing.T) {
 
 func TestBuildRefusesADockerfileOutsideTheContext(t *testing.T) {
 	fake := newFakeDocker(t)
-	pool := newTestPool(t, fake, Options{})
+	docker := newTestDocker(t, fake)
 
 	config := buildConfig(t)
 	config.Build.Context = "sub"
-	if err := pool.Bind(context.Background(), "task-1", config); err == nil {
+	if _, err := docker.Start(context.Background(), "task-1", config); err == nil {
 		t.Fatal("expected an error")
 	}
 	if fake.asked("POST /build") {
@@ -135,11 +135,11 @@ func TestBuildReportsAFailure(t *testing.T) {
 	for name, test := range cases {
 		t.Run(name, func(t *testing.T) {
 			fake := newFakeDocker(t)
-			pool := newTestPool(t, fake, Options{})
+			docker := newTestDocker(t, fake)
 			config := buildConfig(t)
 			test.breakIt(fake, &config)
 
-			err := pool.Bind(context.Background(), "task-1", config)
+			_, err := docker.Start(context.Background(), "task-1", config)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
