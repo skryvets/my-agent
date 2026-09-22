@@ -33,8 +33,10 @@ func TestBindSkipsThePullOfAnImageTheDaemonHas(t *testing.T) {
 
 func TestPullReportsAFailure(t *testing.T) {
 	cases := map[string]func(*fakeDocker){
-		"inside the stream": func(f *fakeDocker) { f.pullStream = `{"error":"manifest unknown"}` },
-		"as a status":       func(f *fakeDocker) { f.fail = "/images/create" },
+		"inside the stream": func(f *fakeDocker) {
+			f.pullStream = `{"errorDetail":{"message":"manifest unknown"},"error":"manifest unknown"}`
+		},
+		"as a status": func(f *fakeDocker) { f.fail = "/images/create" },
 	}
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -50,22 +52,6 @@ func TestPullReportsAFailure(t *testing.T) {
 				t.Error("a container was created from an image that did not arrive")
 			}
 		})
-	}
-}
-
-func TestSplitReferenceNamesTheTag(t *testing.T) {
-	cases := map[string][2]string{
-		"golang":                      {"golang", "latest"},
-		"golang:1.26":                 {"golang", "1.26"},
-		"localhost:5000/team/app":     {"localhost:5000/team/app", "latest"},
-		"localhost:5000/team/app:dev": {"localhost:5000/team/app", "dev"},
-		"alpine@sha256:abc":           {"alpine", "sha256:abc"},
-	}
-	for reference, want := range cases {
-		name, tag := splitReference(reference)
-		if name != want[0] || tag != want[1] {
-			t.Errorf("splitReference(%q) = %q, %q", reference, name, tag)
-		}
 	}
 }
 

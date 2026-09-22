@@ -111,7 +111,7 @@ func TestBuildReportsAFailure(t *testing.T) {
 	}{
 		"a failed step": {
 			breakIt: func(f *fakeDocker, _ *devcontainer.Config) {
-				f.buildStream = `{"stream":"RUN make\n"}` + "\n" + `{"error":"exit code 2"}`
+				f.buildStream = `{"stream":"RUN make\n"}` + "\n" + `{"errorDetail":{"message":"exit code 2"},"error":"exit code 2"}`
 			},
 			want: "RUN make\nexit code 2",
 		},
@@ -152,7 +152,7 @@ func TestBuildReportsAFailure(t *testing.T) {
 
 func TestReadProgressKeepsOnlyTheTailOfTheLog(t *testing.T) {
 	long := strings.Repeat("a", progressTail*2)
-	stream := `{"stream":"` + long + `"}` + "\n" + `{"stream":"END"}` + "\n" + `{"error":"failed"}`
+	stream := `{"stream":"` + long + `"}` + "\n" + `{"stream":"END"}` + "\n" + `{"errorDetail":{"message":"failed"}}`
 	_, err := readProgress(strings.NewReader(stream))
 	if err == nil {
 		t.Fatal("expected an error")

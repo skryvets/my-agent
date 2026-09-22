@@ -5,10 +5,13 @@ agentic work runs on [eino](https://github.com/cloudwego/eino): eino streams
 the reply, reassembles the tool calls, runs them, retries a failed call and
 asks the model again. The Telegram connector runs on
 [go-telegram/bot](https://github.com/go-telegram/bot), which polls and speaks
-the Bot API. `go.mod` requires eino, the eino OpenAI model, go-telegram/bot and
-tailscale/hujson, and nothing else. Everything below `internal/sandbox`,
-`internal/devcontainer` and `internal/task` stays on the standard library,
-except the JSONC reader of `internal/devcontainer`, which is hujson.
+the Bot API. The dev containers run on
+[moby/moby/client](https://github.com/moby/moby/tree/master/client), the Docker
+Engine client. `go.mod` requires eino, the eino OpenAI model, go-telegram/bot,
+moby/moby/client with its api module, and tailscale/hujson, and nothing else.
+Everything below `internal/devcontainer` and `internal/task` stays on the
+standard library, except the JSONC reader of `internal/devcontainer`, which is
+hujson.
 
 ## Layout
 
@@ -36,7 +39,7 @@ internal/task/                       a job end to end, ending in a pull request
   github.go                          the REST calls that open the request
   store.go                           the runs on disk
 internal/sandbox/                    one dev container for each task
-  docker.go                          the Engine API over the unix socket
+  docker.go                          the Docker client, reading a build stream
   container.go                       exec in one container
   archive.go                         a file in and out as a tar
   pool.go                            bind and find the container of a task
@@ -81,10 +84,9 @@ deploy/                              the systemd service and the script that ins
 - the environment of a task comes from the `devcontainer.json` of the
   repository, never from the agent. Read it with `internal/devcontainer`, and
   never put a value of the host into it, because the host holds the token
-- `internal/sandbox` speaks the Docker Engine API over the unix socket with
-  `net/http` and its own `DialContext`. Do not reach for the Docker SDK: one
-  library for the agentic work is the whole budget. The API version is pinned
-  in `docker.go`
+- `internal/sandbox` speaks the Docker Engine API over the unix socket through
+  `moby/moby/client`. Do not write a raw Engine API request next to it. The API
+  version is pinned in `docker.go`
 - which conversation a call belongs to travels in the context, not in an
   argument. The task runner names it once with `conversation.WithKey`, and the
   sandbox reads it there
@@ -128,7 +130,8 @@ Test files mirror source files (`session.go` / `session_test.go`). The shared
 Telegram fake, an `httptest` server that records the multipart form of each
 call, lives in `fake_test.go` alongside `fakeAgent` and `newTestBot`, which
 points `bot.New` at the fake with `WithServerURL` and `WithSkipGetMe`. The Docker fake answers on a unix
-socket in `internal/sandbox/fake_test.go`. `internal/agent/fake_test.go` holds
+socket in `internal/sandbox/fake_test.go`, and takes over the connection of an
+exec start the way the daemon does. `internal/agent/fake_test.go` holds
 `fakeModel`, a scripted `model.BaseChatModel` that `newClient` takes in place
 of OpenRouter. No test reaches the network.
 

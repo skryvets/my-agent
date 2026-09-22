@@ -141,14 +141,16 @@ func (c Config) Dockerfile() string {
 	return filepath.Join(filepath.Dir(c.File), c.Build.Dockerfile)
 }
 
-// BuildArgs are the build arguments with their variables replaced.
-func (c Config) BuildArgs() map[string]string {
+// BuildArgs are the build arguments with their variables replaced. A value is
+// a pointer because the Engine API tells an empty argument from an absent one.
+func (c Config) BuildArgs() map[string]*string {
 	if len(c.Build.Args) == 0 {
 		return nil
 	}
-	args := make(map[string]string, len(c.Build.Args))
+	args := make(map[string]*string, len(c.Build.Args))
 	for name, value := range c.Build.Args {
-		args[name] = c.expand(value, nil)
+		expanded := c.expand(value, nil)
+		args[name] = &expanded
 	}
 	return args
 }

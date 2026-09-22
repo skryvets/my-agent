@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"path"
+
+	"github.com/moby/moby/client"
 )
 
 // A file crosses into a container as a tar archive: the Engine API has no
@@ -16,14 +16,13 @@ import (
 
 // ReadFile returns the content of one file in the container.
 func (c *Container) ReadFile(ctx context.Context, name string) (string, error) {
-	query := "?path=" + url.QueryEscape(c.resolve(name))
-	resp, err := c.docker.do(ctx, http.MethodGet, "/containers/"+c.id+"/archive"+query, "", nil)
+	copied, err := c.docker.CopyFromContainer(ctx, c.id, client.CopyFromContainerOptions{SourcePath: c.resolve(name)})
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer copied.Content.Close()
 
-	reader := tar.NewReader(resp.Body)
+	reader := tar.NewReader(copied.Content)
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
@@ -69,12 +68,6 @@ func (c *Container) WriteFile(ctx context.Context, name, content string) error {
 		return err
 	}
 
-	query := "?path=" + url.QueryEscape(parent)
-	resp, err := c.docker.do(ctx, http.MethodPut, "/containers/"+c.id+"/archive"+query, "application/x-tar", &archive)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, err = io.Copy(io.Discard, resp.Body)
+	_, err := c.docker.CopyToContainer(ctx, c.id, client.CopyToContainerOptions{DestinationPath: parent, Content: &archive})
 	return err
 }
