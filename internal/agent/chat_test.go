@@ -17,23 +17,30 @@ func assistant(content string) *schema.Message {
 
 var errNoReply = errors.New("the fake model has no reply left")
 
+// lastToolResult is the newest tool result in what the model was given.
+func lastToolResult(history History) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == schema.Tool {
+			return history[i].Content
+		}
+	}
+	return ""
+}
+
 func TestChatStreamsTheAnswer(t *testing.T) {
 	fake := &fakeModel{replies: []reply{{message: assistant("the answer is here")}}}
 	client := testClient(t, fake)
 
 	var out strings.Builder
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("ask"), &out)
+	answer, err := client.Chat(context.Background(), History(nil).WithUser("ask"), &out)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if msg.Content != "the answer is here" {
-		t.Errorf("content = %q", msg.Content)
+	if answer != "the answer is here" {
+		t.Errorf("answer = %q", answer)
 	}
 	if !strings.Contains(out.String(), "the answer is here") {
 		t.Errorf("stream = %q", out.String())
-	}
-	if len(msg.Steps) != 0 {
-		t.Errorf("steps = %#v", msg.Steps)
 	}
 	if client.Model() != "test-model" {
 		t.Errorf("model = %q", client.Model())
@@ -47,24 +54,22 @@ func TestChatRunsAToolAndAsksAgain(t *testing.T) {
 	client := testClient(t, fake, echoTool(t, nil))
 
 	var out strings.Builder
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("say pong"), &out)
+	answer, err := client.Chat(context.Background(), History(nil).WithUser("say pong"), &out)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if msg.Content != "done" {
-		t.Errorf("content = %q", msg.Content)
-	}
-	if len(msg.Steps) != 2 {
-		t.Fatalf("steps = %#v", msg.Steps)
-	}
-	if len(msg.Steps[0].ToolCalls) != 1 || msg.Steps[1].Content != "pong" {
-		t.Errorf("steps = %#v", msg.Steps)
+	if answer != "done" {
+		t.Errorf("answer = %q", answer)
 	}
 	if !strings.Contains(out.String(), "--- tool: echo") {
 		t.Errorf("stream does not name the tool: %q", out.String())
 	}
 	if fake.times() != 2 {
 		t.Errorf("the model was asked %d times, want 2", fake.times())
+	}
+	// The second call carried the tool call and its result.
+	if got := lastToolResult(fake.history(1)); got != "pong" {
+		t.Errorf("the model was told %q, want the result of the tool", got)
 	}
 }
 
@@ -74,15 +79,15 @@ func TestChatReportsAFailedToolToTheModel(t *testing.T) {
 	fake := &fakeModel{replies: []reply{{message: asked}, {message: assistant("I cannot")}}}
 	client := testClient(t, fake, echoTool(t, errors.New("the workspace is gone")))
 
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("say pong"), io.Discard)
+	answer, err := client.Chat(context.Background(), History(nil).WithUser("say pong"), io.Discard)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if msg.Content != "I cannot" {
-		t.Errorf("content = %q", msg.Content)
+	if answer != "I cannot" {
+		t.Errorf("answer = %q", answer)
 	}
-	if len(msg.Steps) != 2 || !strings.Contains(msg.Steps[1].Content, "the workspace is gone") {
-		t.Errorf("steps = %#v", msg.Steps)
+	if got := lastToolResult(fake.history(1)); !strings.Contains(got, "the workspace is gone") {
+		t.Errorf("the model was told %q, want the error of the tool", got)
 	}
 }
 
@@ -92,12 +97,11 @@ func TestChatReportsAToolTheModelInvented(t *testing.T) {
 	fake := &fakeModel{replies: []reply{{message: asked}, {message: assistant("I cannot")}}}
 	client := testClient(t, fake, echoTool(t, nil))
 
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("fly"), io.Discard)
-	if err != nil {
+	if _, err := client.Chat(context.Background(), History(nil).WithUser("fly"), io.Discard); err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if len(msg.Steps) != 2 || !strings.Contains(msg.Steps[1].Content, `no tool named "fly"`) {
-		t.Errorf("steps = %#v", msg.Steps)
+	if got := lastToolResult(fake.history(1)); !strings.Contains(got, `no tool named "fly"`) {
+		t.Errorf("the model was told %q", got)
 	}
 }
 
@@ -108,12 +112,12 @@ func TestChatTriesAFailedCallAgain(t *testing.T) {
 	}}
 	client := testClient(t, fake)
 
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("ask"), io.Discard)
+	answer, err := client.Chat(context.Background(), History(nil).WithUser("ask"), io.Discard)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if msg.Content != "second time" {
-		t.Errorf("content = %q", msg.Content)
+	if answer != "second time" {
+		t.Errorf("answer = %q", answer)
 	}
 	if fake.times() != 2 {
 		t.Errorf("the model was asked %d times, want 2", fake.times())
@@ -146,7 +150,7 @@ func TestChatCarriesTheWholeHistoryToTheModel(t *testing.T) {
 	fake := &fakeModel{replies: []reply{{message: assistant("two")}}}
 	client := testClient(t, fake)
 
-	history := History(nil).WithUser("one").WithAssistant(Message{Content: "answer"}).WithUser("two")
+	history := History(nil).WithUser("one").WithAssistant("answer").WithUser("two")
 	if _, err := client.Chat(context.Background(), history, io.Discard); err != nil {
 		t.Fatalf("Chat: %v", err)
 	}

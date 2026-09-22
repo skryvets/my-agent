@@ -21,18 +21,18 @@ type slowAgent struct {
 
 func (s *slowAgent) Model() string { return "test-model" }
 
-func (s *slowAgent) Chat(ctx context.Context, history agent.History, _ io.Writer) (agent.Message, error) {
+func (s *slowAgent) Chat(ctx context.Context, history agent.History, _ io.Writer) (string, error) {
 	text := history[len(history)-1].Content
 	s.mu.Lock()
 	s.asked = append(s.asked, text)
 	s.mu.Unlock()
 
 	if text != "slow" {
-		return agent.Message{Content: "answer to " + text}, nil
+		return "answer to " + text, nil
 	}
 	close(s.started)
 	<-ctx.Done()
-	return agent.Message{}, ctx.Err()
+	return "", ctx.Err()
 }
 
 func (s *slowAgent) seen() []string {

@@ -12,64 +12,38 @@ import (
 
 // Chat answers one user turn. The model may ask for tools first: eino runs
 // them, asks the model again, and stops when the model answers in words. The
-// answer is written to stream as it arrives.
-func (c *Client) Chat(ctx context.Context, history History, stream io.Writer) (Message, error) {
+// answer is written to stream as it arrives, and returned whole at the end.
+func (c *Client) Chat(ctx context.Context, history History, stream io.Writer) (string, error) {
 	events := c.runner.Run(ctx, history)
 
-	var produced History
+	var last *schema.Message
 	for {
 		event, ok := events.Next()
 		if !ok {
 			break
 		}
 		if event.Err != nil {
-			return Message{}, plain(event.Err)
+			return "", plain(event.Err)
 		}
 		if event.Output == nil || event.Output.MessageOutput == nil {
 			continue
 		}
 		message, err := read(event.Output.MessageOutput, stream)
 		if err != nil {
-			return Message{}, err
+			return "", err
 		}
 		if message != nil {
-			produced = append(produced, message)
+			last = message
 		}
 	}
 
-	if len(produced) == 0 {
-		return Message{}, errors.New("empty response from model")
+	if last == nil {
+		return "", errors.New("empty response from model")
 	}
-	produced = answered(produced)
-	answer := produced[len(produced)-1]
-	if answer.Content != "" {
+	if last.Content != "" {
 		fmt.Fprintln(stream)
 	}
-	return Message{Content: answer.Content, Steps: produced[:len(produced)-1]}, nil
-}
-
-// answered fills in a tool result the runner did not report. eino answers a
-// tool name the model invented without an event for it, and an assistant turn
-// whose calls have no results is not a conversation the API accepts later.
-func answered(produced History) History {
-	results := map[string]bool{}
-	for _, message := range produced {
-		if message.ToolCallID != "" {
-			results[message.ToolCallID] = true
-		}
-	}
-
-	whole := make(History, 0, len(produced))
-	for _, message := range produced {
-		whole = append(whole, message)
-		for _, call := range message.ToolCalls {
-			if results[call.ID] {
-				continue
-			}
-			whole = append(whole, schema.ToolMessage(noSuchTool(call.Function.Name), call.ID))
-		}
-	}
-	return whole
+	return last.Content, nil
 }
 
 // read writes one message to the stream while it arrives and returns it whole.

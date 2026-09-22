@@ -25,7 +25,7 @@ import (
 // Agent answers a conversation. *agent.Client satisfies it.
 type Agent interface {
 	Model() string
-	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
+	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
 }
 
 // Tasks does a coding job end to end and opens a pull request.

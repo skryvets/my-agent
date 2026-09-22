@@ -25,8 +25,8 @@ func TestParseAllowedUsers(t *testing.T) {
 }
 
 func TestRunRequiresToken(t *testing.T) {
-	model := fakeAgent{answer: func(agent.History) (agent.Message, error) {
-		return agent.Message{}, nil
+	model := fakeAgent{answer: func(agent.History) (string, error) {
+		return "", nil
 	}}
 
 	t.Setenv("TELEGRAM_BOT_TOKEN", "")

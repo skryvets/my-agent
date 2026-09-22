@@ -2,9 +2,9 @@ package agent
 
 import "github.com/cloudwego/eino/schema"
 
-// History is a conversation in the message format eino uses. A turn carries
-// its own tool calls and tool results, so the model can follow up on what it
-// already did.
+// History is a conversation in the message format eino uses: one user turn,
+// one assistant turn, and so on. The tool calls of a turn stay inside eino,
+// because a chat offers no tools and a task asks one question only.
 type History []*schema.Message
 
 // WithUser appends a user turn.
@@ -12,11 +12,9 @@ func (h History) WithUser(text string) History {
 	return append(h, schema.UserMessage(text))
 }
 
-// WithAssistant appends an assistant turn, preceded by the tool calls and the
-// tool results that produced it.
-func (h History) WithAssistant(msg Message) History {
-	h = append(h, msg.Steps...)
-	return append(h, schema.AssistantMessage(msg.Content, nil))
+// WithAssistant appends the answer of the model.
+func (h History) WithAssistant(text string) History {
+	return append(h, schema.AssistantMessage(text, nil))
 }
 
 // DropLast removes the newest turn, so a question the model failed to answer
@@ -28,9 +26,8 @@ func (h History) DropLast() History {
 	return h[:len(h)-1]
 }
 
-// Trim keeps the newest limit messages. Whole turns are dropped so the history
-// never starts on an assistant reply, and never on a tool result whose call is
-// already gone.
+// Trim keeps the newest limit messages. Whole turns are dropped, so the
+// history never starts on an assistant reply.
 func (h History) Trim(limit int) History {
 	if len(h) <= limit {
 		return h

@@ -32,15 +32,6 @@ const (
 // MY_AGENT_MODEL leaves the choice to OpenRouter.
 var slug = os.Getenv("MY_AGENT_MODEL")
 
-// Message is one assistant turn.
-type Message struct {
-	Content string
-
-	// Steps are the tool calls and the tool results that came before
-	// Content. WithAssistant puts them back in front of the answer.
-	Steps History
-}
-
 // Client answers a conversation with one model.
 type Client struct {
 	model  string

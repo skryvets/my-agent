@@ -27,7 +27,7 @@ var started atomic.Int64
 
 // Agent answers a conversation. *agent.Client satisfies it.
 type Agent interface {
-	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
+	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
 }
 
 // Sandbox starts the dev container of a checkout on the host and runs the

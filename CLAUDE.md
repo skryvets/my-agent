@@ -68,9 +68,9 @@ deploy/                              the systemd service and the script that ins
   new folder here plus a branch in `main.go` - do not touch `internal/agent`
 - conversation state is `agent.History`, a slice of eino `*schema.Message`.
   Build turns with `WithUser`, `WithAssistant`, `DropLast` and `Trim` rather
-  than assembling messages in a connector. A `Message` carries the tool turns
-  that produced it in `Steps`, and `WithAssistant` puts them back, so a
-  connector keeps the whole round without knowing the tool wire format
+  than assembling messages in a connector. `Chat` returns the answer as text:
+  the tool calls of a turn stay inside eino, because a chat offers no tools
+  and a task asks one question only
 - a tool is a constructor in `internal/tools` that returns an eino
   `tool.BaseTool`, built with `utils.InferTool` from an arguments struct with
   `jsonschema` tags. Adding one is a new file there plus a line in `main.go` -

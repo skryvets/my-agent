@@ -364,8 +364,8 @@ sequenceDiagram
     end
 
     eino-->>agent: the answer in words
-    agent-->>conn: Message{Content, Steps}
-    conn->>conn: history.WithAssistant(msg)
+    agent-->>conn: the answer as text
+    conn->>conn: history.WithAssistant(answer)
     conn-->>user: answer
 ```
 
@@ -377,10 +377,9 @@ terminal passes `os.Stdout`, so the answer types itself out. Telegram cannot
 edit a message per token, so it passes `io.Discard` and sends the finished
 answer in one go.
 
-`Steps` carries the tool calls and the tool results of the round.
-`WithAssistant` puts them into the history in front of the answer, so the next
-turn replays what the agent did and the connector never has to know the
-`tool_calls` wire format.
+`Chat` returns the answer as text, and `WithAssistant` appends it to the
+history. The tool calls of a turn stay inside eino: a chat offers no tools, and
+a task asks one question and throws the history away, so nothing replays them.
 
 A turn the model failed to answer is dropped with `DropLast`, so a broken turn
 never poisons the history. Reasoning is off, in the `ExtraFields` of the chat

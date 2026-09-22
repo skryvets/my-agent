@@ -40,12 +40,12 @@ func TestChatTriesTooManyRequestsAgain(t *testing.T) {
 	}}
 	client := testClient(t, fake)
 
-	msg, err := client.Chat(context.Background(), History(nil).WithUser("ask"), io.Discard)
+	answer, err := client.Chat(context.Background(), History(nil).WithUser("ask"), io.Discard)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if msg.Content != "here it is" || fake.times() != 2 {
-		t.Errorf("content = %q after %d calls", msg.Content, fake.times())
+	if answer != "here it is" || fake.times() != 2 {
+		t.Errorf("answer = %q after %d calls", answer, fake.times())
 	}
 }
 

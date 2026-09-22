@@ -12,20 +12,20 @@ import (
 )
 
 type fakeAgent struct {
-	answer func(agent.History) (agent.Message, error)
+	answer func(agent.History) (string, error)
 }
 
 func (f fakeAgent) Model() string { return "test-model" }
 
-func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (agent.Message, error) {
+func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (string, error) {
 	return f.answer(history)
 }
 
 func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 	var seen []agent.History
-	model := fakeAgent{answer: func(history agent.History) (agent.Message, error) {
+	model := fakeAgent{answer: func(history agent.History) (string, error) {
 		seen = append(seen, append(agent.History(nil), history...))
-		return agent.Message{Content: "answer"}, nil
+		return "answer", nil
 	}}
 
 	var out, errOut strings.Builder
@@ -48,12 +48,12 @@ func TestRunKeepsHistoryAndSkipsBlankLines(t *testing.T) {
 
 func TestRunReportsFailedTurnAndDropsIt(t *testing.T) {
 	var seen []agent.History
-	model := fakeAgent{answer: func(history agent.History) (agent.Message, error) {
+	model := fakeAgent{answer: func(history agent.History) (string, error) {
 		seen = append(seen, append(agent.History(nil), history...))
 		if len(seen) == 1 {
-			return agent.Message{}, errors.New("rate limited")
+			return "", errors.New("rate limited")
 		}
-		return agent.Message{Content: "ok"}, nil
+		return "ok", nil
 	}}
 
 	var out, errOut strings.Builder
@@ -87,8 +87,8 @@ func TestRunReadsTheRealStandardStreams(t *testing.T) {
 	io.WriteString(questions, "hello\n")
 	questions.Close()
 
-	model := fakeAgent{answer: func(agent.History) (agent.Message, error) {
-		return agent.Message{Content: "answer"}, nil
+	model := fakeAgent{answer: func(agent.History) (string, error) {
+		return "answer", nil
 	}}
 	if err := Run(context.Background(), model); err != nil {
 		t.Fatalf("Run: %v", err)

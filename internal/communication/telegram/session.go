@@ -93,7 +93,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, history agent.History, t
 	}); err != nil {
 		log.Printf("sendChatAction: %v", err)
 	}
-	assistant, err := b.agent.Chat(work, history, io.Discard)
+	answer, err := b.agent.Chat(work, history, io.Discard)
 	if err != nil {
 		if work.Err() == nil {
 			log.Printf("chat: %v", err)
@@ -101,8 +101,8 @@ func (b *Bot) handle(ctx context.Context, chatID int64, history agent.History, t
 		}
 		return history.DropLast()
 	}
-	b.reply(ctx, chatID, assistant.Content)
-	return history.WithAssistant(assistant).Trim(historyTurns * 2)
+	b.reply(ctx, chatID, answer)
+	return history.WithAssistant(answer).Trim(historyTurns * 2)
 }
 
 // command answers a slash command, reporting whether it handled the message and

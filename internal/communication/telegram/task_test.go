@@ -117,9 +117,9 @@ func TestTaskReportsAFailedRun(t *testing.T) {
 func TestTaskKeepsTheConversationGoing(t *testing.T) {
 	fake := newFakeTelegram(t)
 	var asked []agent.History
-	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(history agent.History) (string, error) {
 		asked = append(asked, history)
-		return agent.Message{Content: "answer"}, nil
+		return "answer", nil
 	})
 	bot.tasks = &fakeTasks{lines: []string{"Cloning"}}
 

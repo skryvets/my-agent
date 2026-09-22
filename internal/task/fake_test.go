@@ -29,7 +29,7 @@ type fakeAgent struct {
 	told []string
 }
 
-func (f *fakeAgent) Chat(ctx context.Context, history agent.History, _ io.Writer) (agent.Message, error) {
+func (f *fakeAgent) Chat(ctx context.Context, history agent.History, _ io.Writer) (string, error) {
 	f.mu.Lock()
 	f.keys = append(f.keys, conversation.KeyOf(ctx))
 	if len(history) > 0 {
@@ -42,7 +42,7 @@ func (f *fakeAgent) Chat(ctx context.Context, history agent.History, _ io.Writer
 		f.write(f.checkout())
 	}
 	if f.err != nil {
-		return agent.Message{}, f.err
+		return "", f.err
 	}
 
 	f.mu.Lock()
@@ -52,7 +52,7 @@ func (f *fakeAgent) Chat(ctx context.Context, history agent.History, _ io.Writer
 		answer = f.answers[0]
 		f.answers = f.answers[1:]
 	}
-	return agent.Message{Content: answer}, nil
+	return answer, nil
 }
 
 // checkout is the directory the container of this run was bound to.

@@ -91,16 +91,16 @@ func (f *fakeTelegram) expectNoSend(t *testing.T) {
 }
 
 type fakeAgent struct {
-	answer func(agent.History) (agent.Message, error)
+	answer func(agent.History) (string, error)
 }
 
 func (f fakeAgent) Model() string { return "test-model" }
 
-func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (agent.Message, error) {
+func (f fakeAgent) Chat(_ context.Context, history agent.History, _ io.Writer) (string, error) {
 	return f.answer(history)
 }
 
-func newTestBot(fake *fakeTelegram, answer func(agent.History) (agent.Message, error)) *Bot {
+func newTestBot(fake *fakeTelegram, answer func(agent.History) (string, error)) *Bot {
 	api, err := bot.New("test-token",
 		bot.WithServerURL(fake.server.URL),
 		bot.WithSkipGetMe(),

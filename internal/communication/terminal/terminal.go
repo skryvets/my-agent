@@ -15,7 +15,7 @@ import (
 // Agent answers a conversation. *agent.Client satisfies it.
 type Agent interface {
 	Model() string
-	Chat(ctx context.Context, history agent.History, stream io.Writer) (agent.Message, error)
+	Chat(ctx context.Context, history agent.History, stream io.Writer) (string, error)
 }
 
 type session struct {
@@ -48,13 +48,13 @@ func (s *session) run(ctx context.Context) error {
 		}
 
 		history = history.WithUser(question)
-		assistant, err := s.model.Chat(ctx, history, s.out)
+		answer, err := s.model.Chat(ctx, history, s.out)
 		if err != nil {
 			fmt.Fprintf(s.errOut, "error: %v\n", err)
 			history = history.DropLast()
 			continue
 		}
-		history = history.WithAssistant(assistant)
+		history = history.WithAssistant(answer)
 	}
 	return input.Err()
 }

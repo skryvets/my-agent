@@ -108,7 +108,7 @@ func (r *Runner) think(ctx context.Context, repo Repo, run *Run, workspace strin
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(answer.Content), nil
+	return strings.TrimSpace(answer), nil
 }
 
 // subjectFor asks the model to name its own change. Asking in the turn that
@@ -130,7 +130,7 @@ func (r *Runner) subjectFor(ctx context.Context, run *Run, summary string) strin
 	if err != nil {
 		return subjectOf(run.Instruction)
 	}
-	if subject := subjectLine(answer.Content); subject != "" {
+	if subject := subjectLine(answer); subject != "" {
 		return subject
 	}
 	return subjectOf(run.Instruction)

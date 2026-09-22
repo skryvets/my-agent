@@ -15,9 +15,9 @@ import (
 func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 	fake := newFakeTelegram(t)
 	var seen []agent.History
-	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(history agent.History) (string, error) {
 		seen = append(seen, append(agent.History(nil), history...))
-		return agent.Message{Content: fmt.Sprintf("answer %d", len(seen))}, nil
+		return fmt.Sprintf("answer %d", len(seen)), nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,12 +54,12 @@ func TestServeAnswersWithHistoryAndTypingAction(t *testing.T) {
 func TestServeReportsFailedTurnAndDropsIt(t *testing.T) {
 	fake := newFakeTelegram(t)
 	var seen []agent.History
-	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(history agent.History) (string, error) {
 		seen = append(seen, append(agent.History(nil), history...))
 		if len(seen) == 1 {
-			return agent.Message{}, errors.New("rate limited")
+			return "", errors.New("rate limited")
 		}
-		return agent.Message{Content: "ok"}, nil
+		return "ok", nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,9 +81,9 @@ func TestServeReportsFailedTurnAndDropsIt(t *testing.T) {
 func TestServeHandlesCommands(t *testing.T) {
 	fake := newFakeTelegram(t)
 	var seen []agent.History
-	bot := newTestBot(fake, func(history agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(history agent.History) (string, error) {
 		seen = append(seen, append(agent.History(nil), history...))
-		return agent.Message{Content: "answer"}, nil
+		return "answer", nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -113,9 +113,9 @@ func TestServeHandlesCommands(t *testing.T) {
 
 func TestDispatchIgnoresNonTextAndDisallowedUsers(t *testing.T) {
 	fake := newFakeTelegram(t)
-	bot := newTestBot(fake, func(agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(agent.History) (string, error) {
 		t.Error("model should not be called")
-		return agent.Message{}, nil
+		return "", nil
 	})
 	bot.allowed = map[int64]bool{7: true}
 
@@ -131,9 +131,9 @@ func TestDispatchIgnoresNonTextAndDisallowedUsers(t *testing.T) {
 func TestDispatchTellsSenderWhenQueueIsFull(t *testing.T) {
 	fake := newFakeTelegram(t)
 	release := make(chan struct{})
-	bot := newTestBot(fake, func(agent.History) (agent.Message, error) {
+	bot := newTestBot(fake, func(agent.History) (string, error) {
 		<-release
-		return agent.Message{Content: "done"}, nil
+		return "done", nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
