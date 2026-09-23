@@ -21,7 +21,7 @@ const baseURL = "https://openrouter.ai/api/v1"
 const (
 	// maxRounds caps one Chat call, so a model that keeps asking for tools
 	// cannot run forever.
-	maxRounds = 10
+	maxRounds = 50
 
 	// maxRetries is how often eino tries one failed model call again. It
 	// waits longer after each failure and adds jitter.

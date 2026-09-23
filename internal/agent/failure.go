@@ -40,6 +40,9 @@ func noSuchTool(name string) string { return fmt.Sprintf("error: no tool named %
 // and the path of the node that made the call - because the text of the error
 // goes straight into a chat.
 func plain(err error) error {
+	if errors.Is(err, adk.ErrExceedMaxIterations) {
+		return fmt.Errorf("the model asked for tools %d times without an answer", maxRounds)
+	}
 	var exhausted *adk.RetryExhaustedError
 	if errors.As(err, &exhausted) && exhausted.LastErr != nil {
 		err = exhausted.LastErr

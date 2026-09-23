@@ -143,7 +143,7 @@ written by hand.
 One turn can take several rounds. eino sends the tool schemas with the request;
 if the model answers with `tool_calls` instead of words, eino runs the calls,
 appends one `tool` turn for each of them, and asks the model again. It stops on
-a plain answer, or after ten rounds. Independent calls of one round run at the
+a plain answer, or after fifty rounds. Independent calls of one round run at the
 same time.
 
 A tool that fails reports the failure to the model as text, so a command that
@@ -364,7 +364,7 @@ sequenceDiagram
     conn->>agent: Chat(ctx, history, stream)
     agent->>eino: Run(ctx, history)
 
-    loop until the model answers in words, up to ten rounds
+    loop until the model answers in words, up to fifty rounds
         eino->>api: POST /chat/completions, tools
         api-->>eino: server-sent events
         note over eino,api: a failed call is tried again,<br/>up to three times, with backoff

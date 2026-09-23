@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -61,6 +62,22 @@ func TestChatTriesAServerFailureAgain(t *testing.T) {
 	}
 	if fake.times() != 2 {
 		t.Errorf("the model was asked %d times, want 2", fake.times())
+	}
+}
+
+func TestChatSaysPlainlyWhenTheRoundsRunOut(t *testing.T) {
+	var replies []reply
+	for i := range maxRounds {
+		asked := assistant("")
+		asked.ToolCalls = append(asked.ToolCalls, toolCall(fmt.Sprintf("call_%d", i), "echo", `{"text":"again"}`))
+		replies = append(replies, reply{message: asked})
+	}
+	fake := &fakeModel{replies: replies}
+	client := testClient(t, fake, echoTool(t, nil))
+
+	_, err := client.Chat(context.Background(), History(nil).WithUser("loop"), io.Discard)
+	if err == nil || err.Error() != "the model asked for tools 50 times without an answer" {
+		t.Errorf("err = %v", err)
 	}
 }
 
