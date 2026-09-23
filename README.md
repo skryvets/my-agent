@@ -116,7 +116,7 @@ Type a message at the `you>` prompt and press enter. The whole conversation is s
 The answer streams in as it arrives. A failed turn prints the error and drops the unanswered message, leaving the session alive.
 
 The terminal and Telegram are two ways to reach the same `session.Session`,
-so the commands are the same in both: `/help`, `/reset`, and `/task` when
+so the commands are the same in both: `/help`, `/history`, `/clear`, and `/task` when
 `GITHUB_TOKEN` is set and Docker is there. In the terminal, Ctrl-C is the way
 to stop a run, because the terminal reads the next line only after the answer.
 
@@ -296,7 +296,8 @@ go run .
 - `/start`, `/help` - what the bot does
 - `/task owner/name what to change` - change a repository in its dev container and open a pull request
 - `/stop` - stop the answer or the task under way in that chat, and drop the messages that wait
-- `/reset` - forget the conversation in that chat
+- `/history` - show the conversation in that chat
+- `/clear` - forget the conversation in that chat. `/reset` does the same
 
 Details worth knowing:
 

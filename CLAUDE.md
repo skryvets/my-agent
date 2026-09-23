@@ -64,7 +64,7 @@ deploy/                              the systemd service and the script that ins
 - `internal/communication/*` depends on `internal/agent`, never the reverse.
   Nothing under `internal/` imports `main`
 - a connector reads messages and sends replies, nothing more. Everything a
-  person can say - a chat turn, `/help`, `/reset`, `/task` - is answered by
+  person can say - a chat turn, `/help`, `/history`, `/clear`, `/task` - is answered by
   `session.Session`, so the terminal and Telegram behave the same. Adding a
   connector is a new folder here that makes one `Session` for each person it
   talks to, plus a branch in `main.go` - do not touch `internal/agent`

@@ -109,17 +109,29 @@ func TestHandleAnswersTheCommands(t *testing.T) {
 	ctx := context.Background()
 
 	s.Handle(ctx, "/start")
-	if got := (*replies)[0]; !strings.Contains(got, "/reset") || !strings.Contains(got, "test-model") {
+	if got := (*replies)[0]; !strings.Contains(got, "/clear") || !strings.Contains(got, "/history") || !strings.Contains(got, "test-model") {
 		t.Fatalf("start reply = %q", got)
 	}
+	s.Handle(ctx, "/history")
+	if got := (*replies)[1]; got != "The conversation is empty." {
+		t.Fatalf("empty history reply = %q", got)
+	}
 	s.Handle(ctx, "hello")
-	s.Handle(ctx, "/reset")
-	if got := (*replies)[2]; got != "Conversation cleared." {
-		t.Fatalf("reset reply = %q", got)
+	s.Handle(ctx, "/history")
+	if got := (*replies)[3]; got != "You: hello\n\ntest-model: answer" {
+		t.Fatalf("history reply = %q", got)
+	}
+	s.Handle(ctx, "/clear")
+	if got := (*replies)[4]; got != "Conversation cleared." {
+		t.Fatalf("clear reply = %q", got)
 	}
 	s.Handle(ctx, "again")
 	if seen := model.histories(); len(seen) != 2 || len(seen[1]) != 1 {
 		t.Errorf("history was not cleared: %#v", seen)
+	}
+	s.Handle(ctx, "/reset")
+	if got := (*replies)[len(*replies)-1]; got != "Conversation cleared." {
+		t.Errorf("reset reply = %q", got)
 	}
 
 	s.Handle(ctx, "/stop")

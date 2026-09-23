@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/skryvets/my-agent/internal/agent"
 	"github.com/skryvets/my-agent/internal/task"
 )
@@ -53,7 +54,9 @@ func (s *Session) Handle(ctx context.Context, text string) {
 	switch commandName(text) {
 	case "/start", "/help":
 		s.Reply(s.Help())
-	case "/reset":
+	case "/history":
+		s.Reply(s.transcript())
+	case "/clear", "/reset":
 		s.history = nil
 		s.Reply("Conversation cleared.")
 	case "/stop":
@@ -97,8 +100,25 @@ func (s *Session) Help() string {
 	}
 	return help +
 		"/stop - stop what I am doing and drop the messages that wait\n" +
-		"/reset - forget this conversation\n" +
+		"/history - show this conversation\n" +
+		"/clear - forget this conversation\n" +
 		"/help - show this message"
+}
+
+// transcript is the conversation the model sees on the next turn.
+func (s *Session) transcript() string {
+	if len(s.history) == 0 {
+		return "The conversation is empty."
+	}
+	lines := make([]string, len(s.history))
+	for i, m := range s.history {
+		who := "You"
+		if m.Role == schema.Assistant {
+			who = s.Agent.Model()
+		}
+		lines[i] = who + ": " + m.Content
+	}
+	return strings.Join(lines, "\n\n")
 }
 
 func commandName(text string) string {
