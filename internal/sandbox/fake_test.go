@@ -39,6 +39,8 @@ type fakeDocker struct {
 	// output is what the next exec prints, and exitCode is how it ends.
 	output   string
 	exitCode int
+	// hang keeps an exec running until the client closes the connection.
+	hang bool
 	// files answers an archive request, by absolute path.
 	files map[string]string
 	// fail makes exactly one path answer with a 500.
@@ -170,7 +172,7 @@ func (f *fakeDocker) writeImage(w http.ResponseWriter, path string) {
 // the connection and streams the output raw until the command ends.
 func (f *fakeDocker) writeOutput(w http.ResponseWriter) {
 	f.mu.Lock()
-	output := f.output
+	output, hang := f.output, f.hang
 	f.mu.Unlock()
 
 	conn, buffered, err := w.(http.Hijacker).Hijack()
@@ -180,6 +182,9 @@ func (f *fakeDocker) writeOutput(w http.ResponseWriter) {
 	defer conn.Close()
 	fmt.Fprint(buffered, "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n"+output)
 	buffered.Flush()
+	if hang {
+		io.Copy(io.Discard, conn)
+	}
 }
 
 func (f *fakeDocker) writeExit(w http.ResponseWriter) {

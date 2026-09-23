@@ -3,9 +3,11 @@ package sandbox
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
@@ -45,6 +47,23 @@ func TestContainerRunReturnsTheOutputAndTheExitStatus(t *testing.T) {
 	output, code, err := box.Exec(ctx, []string{"false"})
 	if err != nil || code != 2 || strings.Contains(output, "exit status") {
 		t.Errorf("Exec = %q, %d, %v, want the code apart from the output", output, code, err)
+	}
+}
+
+func TestContainerRunStopsACommandThatNeverEnds(t *testing.T) {
+	fake := newFakeDocker(t)
+	fake.output = "waiting for a key"
+	fake.hang = true
+	box := started(t, fake)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	got, err := box.Run(ctx, "git log")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the deadline", err)
+	}
+	if got != "waiting for a key" {
+		t.Errorf("output = %q, want what came before the stop", got)
 	}
 }
 

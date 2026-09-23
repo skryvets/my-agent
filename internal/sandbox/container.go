@@ -27,7 +27,7 @@ type Container struct {
 func (c *Container) Run(ctx context.Context, command string) (string, error) {
 	output, code, err := c.Exec(ctx, []string{"sh", "-c", command})
 	if err != nil {
-		return "", err
+		return output, err
 	}
 	if code != 0 {
 		output += fmt.Sprintf("\n[exit status %d]", code)
@@ -58,8 +58,15 @@ func (c *Container) Exec(ctx context.Context, args []string) (string, int, error
 		return "", 0, err
 	}
 	defer attached.Close()
+	// The client watches ctx only until the connection is upgraded, so a
+	// command that never ends would block the read below forever.
+	stop := context.AfterFunc(ctx, attached.Close)
+	defer stop()
 
 	output, err := io.ReadAll(attached.Reader)
+	if ctx.Err() != nil {
+		return string(output), 0, ctx.Err()
+	}
 	if err != nil {
 		return "", 0, err
 	}
