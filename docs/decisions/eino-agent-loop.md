@@ -12,7 +12,7 @@
 **Q:** Which files go?
 **A:** `internal/agent/stream.go`, `toolcall.go`, `reasoning.go`, `tool.go` and `loop.go`, with their tests. eino parses the stream, joins the `tool_calls` fragments, joins the reasoning chunks with `schema.ConcatMessages`, holds the tool list and runs the loop.
 
-`reasoning.go` was kept before as the code that reassembles `reasoning_details` for the day reasoning is switched on. eino does that work now, so the file is dead in the exact sense the earlier rule wanted to avoid: code with no caller and no future caller. Reasoning itself stays off.
+`reasoning.go` was kept before as the code that reassembles `reasoning_details` for the day reasoning is switched on. eino does that work now, so the file is dead in the exact sense the earlier rule wanted to avoid: code with no caller and no future caller. Reasoning itself is on: every request sends `"reasoning": {"enabled": true}`, and eino joins the reasoning chunks of the stream.
 
 ## What the connectors see
 **Q:** Does a connector change?
@@ -26,9 +26,9 @@
 **Q:** How does a tool failure reach the model?
 **A:** `agent.New` wraps every tool with `utils.WrapToolWithErrorHandler`, which turns the error into `error: <text>` for the model. `UnknownToolsHandler` answers a name the model invented with `error: no tool named "<name>"`. Both keep the old behaviour: the model reads the failure and tries something else.
 
-## A tool result the runner does not report
-**Q:** Why does `chat.go` fill in a missing tool result?
-**A:** The eino runner answers a hallucinated tool name without emitting an event for it. The assistant turn that asked for the call would then reach the history with no result beside it, and the next request would be malformed. `answered` adds the missing result before `Chat` returns.
+## A tool call the model invented
+**Q:** Does `chat.go` fill in a missing tool result?
+**A:** No. The runner answers a hallucinated tool name through `UnknownToolsHandler`, and the result travels beside the assistant turn that asked for the call, so the next request is well formed. `chat.go` only reads the events and streams what the person reads.
 
 ## The text of a failure
 **Q:** Why does `agent.go` unwrap the error before it returns?

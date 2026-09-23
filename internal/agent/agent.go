@@ -44,8 +44,8 @@ func New(ctx context.Context, apiKey string, tools ...tool.BaseTool) (*Client, e
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   slug,
-		// Reasoning is off on purpose. Switching it back on is this
-		// field and nothing else.
+		// Reasoning is on. Switching it off is this field and
+		// nothing else.
 		ExtraFields: map[string]any{"reasoning": map[string]any{"enabled": true}},
 	})
 	if err != nil {
