@@ -116,9 +116,10 @@ deploy/                              the systemd service and the script that ins
   `log.Fatal`
 - one file, one concern. If a file grows past roughly 150 lines it is usually
   carrying two
-- reasoning is deliberately disabled, in the `ExtraFields` of the chat model in
-  `agent.go`. eino joins the reasoning chunks itself, so switching reasoning
-  back on is that one field. Do not switch it on without being asked
+- reasoning is deliberately enabled, in the `ExtraFields` of the chat model in
+  `agent.go`: every request sends `"reasoning": {"enabled": true}`. eino joins
+  the reasoning chunks itself, so switching reasoning off is that one field.
+  Do not switch it off without being asked
 - one failed model call is tried again, up to `maxRetries` times, with the
   exponential backoff and the jitter of eino. `retryable` refuses a second
   attempt to a run the caller stopped, because `/stop` must end a run at once,

@@ -124,7 +124,7 @@ A chat, in the terminal or in Telegram, offers the model no tools: it answers
 in words. Work on a repository goes through `/task`, in the dev container of
 that repository.
 
-Reasoning is off: every request sends `"reasoning": {"enabled": false}`, in the `ExtraFields` of the chat model in `internal/agent/agent.go`. The model returns an answer and no thinking. That one field switches reasoning back on, and eino joins the reasoning chunks and replays them on the next turn.
+Reasoning is on: every request sends `"reasoning": {"enabled": true}`, in the `ExtraFields` of the chat model in `internal/agent/agent.go`. The thinking arrives beside the answer, and eino joins the reasoning chunks of the stream; only the answer itself reaches the chat and the history. That one field switches reasoning off.
 
 ## Tools
 
@@ -396,8 +396,9 @@ history. The tool calls of a turn stay inside eino: a chat offers no tools, and
 a task asks one question and throws the history away, so nothing replays them.
 
 A turn the model failed to answer is dropped with `DropLast`, so a broken turn
-never poisons the history. Reasoning is off, in the `ExtraFields` of the chat
-model; eino joins the reasoning chunks itself when it is switched back on.
+never poisons the history. Reasoning is on, in the `ExtraFields` of the chat
+model; eino joins the reasoning chunks of the stream itself, and only the
+answer is kept in the history.
 
 ## Layout
 
