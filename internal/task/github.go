@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/google/go-github/v92/github"
 )
@@ -25,7 +26,7 @@ func ParseRepo(text string) (Repo, error) {
 	trimmed = strings.Trim(trimmed, "/")
 
 	owner, name, found := strings.Cut(trimmed, "/")
-	if !found || owner == "" || name == "" || strings.Contains(name, "/") {
+	if !found || owner == "" || name == "" || strings.Contains(name, "/") || strings.ContainsFunc(trimmed, unicode.IsSpace) {
 		return Repo{}, fmt.Errorf("%q is not a repository, write owner/name", text)
 	}
 	return Repo{Owner: owner, Name: name}, nil

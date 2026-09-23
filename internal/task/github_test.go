@@ -34,7 +34,7 @@ func TestParseRepoReadsEveryShape(t *testing.T) {
 }
 
 func TestParseRepoRefusesWhatIsNotOne(t *testing.T) {
-	for _, text := range []string{"", "my-agent", "a/b/c", "/my-agent", "skryvets/"} {
+	for _, text := range []string{"", "my-agent", "a/b/c", "/my-agent", "skryvets/", "skryvets/my-agent\n\nI", "skryvets/my agent"} {
 		if _, err := ParseRepo(text); err == nil {
 			t.Errorf("ParseRepo(%q) was accepted", text)
 		}

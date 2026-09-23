@@ -30,6 +30,18 @@ func TestTaskStartsARunAndReportsItsProgress(t *testing.T) {
 	}
 }
 
+func TestTaskReadsARepositoryFollowedByALineBreak(t *testing.T) {
+	s, _, _ := newSession(t, nil)
+	tasks := &fakeTasks{}
+	s.Tasks = tasks
+
+	s.Handle(context.Background(), "/task skryvets/my-agent\n\nI need the docs\nchecked against the code")
+
+	if tasks.repository != "skryvets/my-agent" || tasks.instruction != "I need the docs\nchecked against the code" {
+		t.Errorf("run = %#v", tasks)
+	}
+}
+
 func TestTaskAnswersWhenItCannotRun(t *testing.T) {
 	s, replies, _ := newSession(t, nil)
 	ctx := context.Background()

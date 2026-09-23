@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	"github.com/skryvets/my-agent/internal/task"
 )
@@ -16,8 +17,11 @@ func (s *Session) task(ctx context.Context, text string) {
 	}
 
 	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), "/task"))
-	repository, instruction, _ := strings.Cut(rest, " ")
-	if repository == "" || strings.TrimSpace(instruction) == "" {
+	repository, instruction := rest, ""
+	if i := strings.IndexFunc(rest, unicode.IsSpace); i >= 0 {
+		repository, instruction = rest[:i], strings.TrimSpace(rest[i:])
+	}
+	if repository == "" || instruction == "" {
 		s.Reply("Write: /task owner/name what to change")
 		return
 	}
